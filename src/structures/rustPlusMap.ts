@@ -67,6 +67,7 @@ export class RustPlusMap {
     public harborMonuments: string[];
 
     private static fontsRegistered = false;
+    private static renderQueue: Promise<void> = Promise.resolve();
 
     constructor(rpInstance: RustPlusInstance, appMap: rp.AppMap) {
         this.rpInstance = rpInstance;
@@ -122,8 +123,15 @@ export class RustPlusMap {
         }
     }
 
-    public async writeImage(grids: boolean = false, monuments: boolean = false, markers: boolean = false,
+    public writeImage(grids: boolean = false, monuments: boolean = false, markers: boolean = false,
         tracers: boolean = false): Promise<string> {
+        const result = RustPlusMap.renderQueue.then(() => this.renderImage(grids, monuments, markers, tracers));
+        // Keep the queue moving after a failed render while returning the error to its caller.
+        RustPlusMap.renderQueue = result.then(() => undefined, () => undefined);
+        return result;
+    }
+
+    private async renderImage(grids: boolean, monuments: boolean, markers: boolean, tracers: boolean): Promise<string> {
         RustPlusMap.registerFonts();
 
         const cleanImage = grids === false && monuments === false;

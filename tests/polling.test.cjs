@@ -23,6 +23,30 @@ const views = require('../src/discordUtils/discordMessages');
 const connected = require('../src/rustPlusEvents/connected');
 const instance = () => new RustPlusInstance('guild', 'server');
 
+test('map renders share one FIFO across servers and continue after a failed render', async t => {
+    const first = new RustPlusMap({ serverId: 'first' }, rp.AppMap.create());
+    const second = new RustPlusMap({ serverId: 'second' }, rp.AppMap.create());
+    const gate = Promise.withResolvers();
+    const starts = [];
+    t.mock.method(RustPlusMap.prototype, 'renderImage', async function (grids) {
+        starts.push([this.rpInstance.serverId, grids]);
+        if (this === first && !grids) await gate.promise;
+        if (this === second) throw new Error('bad map');
+        return grids ? 'enhanced.png' : 'base.png';
+    });
+
+    const base = first.writeImage();
+    const failed = assert.rejects(second.writeImage(true), /bad map/);
+    const enhanced = first.writeImage(true);
+    await nextTurn();
+    assert.deepEqual(starts, [['first', false]]);
+    gate.resolve();
+    assert.equal(await base, 'base.png');
+    await failed;
+    assert.equal(await enhanced, 'enhanced.png');
+    assert.deepEqual(starts, [['first', false], ['second', true], ['first', true]]);
+});
+
 test('a slow poll does not overlap the next five interval ticks', async t => {
     t.mock.timers.enable({ apis: ['setInterval'] });
     const bot = instance();
