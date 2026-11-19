@@ -20,6 +20,8 @@
 
 /* eslint-disable-next-line @typescript-eslint/no-require-imports */
 const PushReceiverClient = require('@liamcottle/push-receiver/src/client');
+import { pairingServerKey } from '../utils/rustRelay';
+import { isUint64String } from 'rustplus-ts';
 import { z } from 'zod';
 
 import {
@@ -32,16 +34,31 @@ import * as types from '../utils/types';
 import * as vu from '../utils/validationUtils';
 import * as constants from '../utils/constants'
 import {
-    GuildInstance, PairingDataMap, SmartSwitchConfigAutoSetting, StorageMonitorConfigType
+    GuildInstance, SmartSwitchConfigAutoSetting, StorageMonitorConfigType
 } from './guildInstanceManager';
 import * as discordMessages from '../discordUtils/discordMessages';
 
 
 const NOTIFICATION_EXPIRATION_TIME_MS = 10_000;
 
+// The pinned receiver awaits both proto loading and check-in before opening TLS.
+// Its retry path also calls these hooks. A retired credential must never open a new socket.
+class CredentialReceiver extends PushReceiverClient {
+    constructor(androidId: string, securityToken: string, steamId: string) {
+        super(androidId, securityToken, [], steamId);
+    }
+
+    async _checkIn() {
+        if (!this._isDestroyed) await super._checkIn();
+    }
+
+    _connect() {
+        if (!this._isDestroyed) super._connect();
+    }
+}
+
 export interface FcmListeners {
-    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-    [steamId: types.SteamId]: any; /* Client */
+    [steamId: types.SteamId]: CredentialReceiver;
 }
 
 export const AppDataItemSchema = z.object({
@@ -111,93 +128,90 @@ export enum NewsTypes {
 }
 export const NewsTypesSchema = z.enum(['news']);
 
+const addressFields = {
+    id: z.string().min(1).optional(),
+    ip: z.string().optional(),
+    port: z.string().optional()
+};
+function hasServerAddress(body: { id?: string; ip?: string; port?: string }): boolean {
+    return Boolean(body.id || (body.ip && body.port));
+}
+
 export const PairingServerBodySchema = z.object({
-    id: z.string(),
+    ...addressFields,
     name: z.string(),
     desc: z.string(),
     img: z.string(),
     logo: z.string(),
     url: z.string(),
-    ip: z.string(),
-    port: z.string(),
     playerId: z.string(),
     playerToken: z.string(),
     type: z.string(),
-}).describe('PairingServerBody');
+}).refine(hasServerAddress).describe('PairingServerBody');
 export type PairingServerBody = z.infer<typeof PairingServerBodySchema>;
 
 export const PairingEntityBodySchema = z.object({
-    id: z.string(),
+    ...addressFields,
     name: z.string(),
     desc: z.string(),
     img: z.string(),
     logo: z.string(),
     url: z.string(),
-    ip: z.string(),
-    port: z.string(),
     playerId: z.string(),
     playerToken: z.string(),
-    entityId: z.string(),
+    entityId: z.string().refine(isUint64String),
     entityType: z.string(),
     entityName: z.string(),
     type: z.string(),
-}).describe('PairingEntityBody');
+}).refine(hasServerAddress).describe('PairingEntityBody');
 export type PairingEntityBody = z.infer<typeof PairingEntityBodySchema>;
 
 
 export const AlarmAlarmBodySchema = z.object({
-    id: z.string(),
+    ...addressFields,
     name: z.string(),
     desc: z.string(),
     img: z.string(),
     logo: z.string(),
     url: z.string(),
-    ip: z.string(),
-    port: z.string(),
     type: z.string(),
-}).describe('AlarmAlarmBody');
+}).refine(hasServerAddress).describe('AlarmAlarmBody');
 export type AlarmAlarmBody = z.infer<typeof AlarmAlarmBodySchema>;
 
 export const AlarmPluginBodySchema = z.object({
-    id: z.string(),
+    ...addressFields,
     name: z.string(),
     desc: z.string(),
     img: z.string(),
     logo: z.string(),
     url: z.string(),
-    ip: z.string(),
-    port: z.string(),
-}).describe('AlarmPluginBody');
+}).refine(hasServerAddress).describe('AlarmPluginBody');
 export type AlarmPluginBody = z.infer<typeof AlarmPluginBodySchema>;
 
 export const PlayerDeathBodySchema = z.object({
-    id: z.string(),
+    ...addressFields,
     name: z.string(),
     desc: z.string(),
     img: z.string(),
     logo: z.string(),
     url: z.string(),
-    ip: z.string(),
-    port: z.string(),
     type: z.string(),
     targetId: z.string(),
     targetName: z.string()
-}).describe('PlayerDeathBody');
+}).refine(hasServerAddress).describe('PlayerDeathBody');
 export type PlayerDeathBody = z.infer<typeof PlayerDeathBodySchema>;
 
 export const TeamLoginBodySchema = z.object({
-    id: z.string(),
+    ...addressFields,
     name: z.string(),
     desc: z.string(),
     img: z.string(),
     logo: z.string(),
     url: z.string(),
-    ip: z.string(),
-    port: z.string(),
     type: z.string(),
     targetId: z.string(),
     targetName: z.string()
-}).describe('TeamLoginBody');
+}).refine(hasServerAddress).describe('TeamLoginBody');
 export type TeamLoginBody = z.infer<typeof TeamLoginBodySchema>;
 
 export const NewsNewsBodySchema = z.object({
@@ -245,8 +259,10 @@ export class FcmListenerManager {
 
         const androidId = credentials.gcm.androidId;
         const securityToken = credentials.gcm.securityToken;
-        this.listeners[steamId] = new PushReceiverClient(androidId, securityToken, [], steamId);
-        this.listeners[steamId].on('ON_DATA_RECEIVED', (data: unknown) => {
+        const client = new CredentialReceiver(androidId, securityToken, steamId);
+        this.listeners[steamId] = client;
+        client.on('ON_DATA_RECEIVED', (data: unknown) => {
+            if (this.listeners[steamId] !== client) return;
             const fn = `[${this.constructor.name}: onDataReceived]`;
             const logParam = { steamId: steamId };
 
@@ -262,7 +278,12 @@ export class FcmListenerManager {
 
             this.onDataReceived(steamId, data);
         });
-        this.listeners[steamId].connect();
+        void client.connect().catch(() => {
+            if (this.listeners[steamId] === client) {
+                log.warn(`${fn} FCM check-in failed; retrying.`, logParam);
+                client.reconnect();
+            }
+        });
         log.info(`${fn} FCM Listener started.`, logParam);
 
         return true;
@@ -448,7 +469,6 @@ async function pairingServer(flm: FcmListenerManager, steamId: types.SteamId, bo
     const logParam = { steamId: steamId };
 
     const credentials = cm.getCredentials(steamId);
-    const serverId = `${body.ip}-${body.port}`;
 
     if (!credentials) {
         log.warn(`${fn} Could not find Credentials.`, logParam);
@@ -458,6 +478,7 @@ async function pairingServer(flm: FcmListenerManager, steamId: types.SteamId, bo
     const associatedGuilds = await dm.getGuildIdsForUser(credentials.discordUserId);
     for (const guildId of associatedGuilds) {
         const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
+        const serverId = pairingServerKey(gInstance.serverInfoMap, body);
         const serverInfo = gInstance.serverInfoMap[serverId];
 
         let message = null;
@@ -469,27 +490,31 @@ async function pairingServer(flm: FcmListenerManager, steamId: types.SteamId, bo
         const logo = encodeURI(decodeURI(body.logo));
         const url = encodeURI(decodeURI(body.url));
 
+        const image = await vu.isValidImageUrl(img) ? img : constants.DEFAULT_SERVER_IMAGE;
+        const logoImage = await vu.isValidImageUrl(logo) ? logo : constants.DEFAULT_SERVER_IMAGE;
+        const previous = gInstance.serverInfoMap[serverId];
         gInstance.serverInfoMap[serverId] = {
             name: body.name,
             desc: body.desc.replaceAll('\\n', '\n').replaceAll('\\t', '\t'),
-            img: await vu.isValidImageUrl(img) ? img : constants.DEFAULT_SERVER_IMAGE,
-            logo: await vu.isValidImageUrl(logo) ? logo : constants.DEFAULT_SERVER_IMAGE,
+            img: image,
+            logo: logoImage,
             url: vu.isValidUrl(url) ? url : constants.DEFAULT_SERVER_URL,
-            ip: body.ip,
-            port: body.port,
+            ip: body.ip || previous?.ip || '',
+            port: body.port || previous?.port || '',
+            relayServerId: body.id || previous?.relayServerId,
             messageId: (message) ? message.id : null,
             pairedDate: Math.floor(Date.now() / 1000),
-            requesterSteamId: serverInfo ? serverInfo.requesterSteamId : body.playerId,
-            active: serverInfo ? serverInfo.active : false,
-            connect: null,
-            markerMap: serverInfo ? serverInfo.markerMap : {},
-            noteMap: serverInfo ? serverInfo.noteMap : {},
-            battlemetricsId: null,
-            smartSwitchConfigMap: serverInfo ? serverInfo.smartSwitchConfigMap : {},
-            smartAlarmConfigMap: serverInfo ? serverInfo.smartAlarmConfigMap : {},
-            storageMonitorConfigMap: serverInfo ? serverInfo.storageMonitorConfigMap : {},
-            smartSwitchGroupConfigMap: serverInfo ? serverInfo.smartSwitchGroupConfigMap : {},
-            customVariables: serverInfo ? serverInfo.customVariables : {
+            requesterSteamId: previous ? previous.requesterSteamId : body.playerId,
+            active: previous ? previous.active : false,
+            connect: previous?.connect ?? null,
+            markerMap: previous ? previous.markerMap : {},
+            noteMap: previous ? previous.noteMap : {},
+            battlemetricsId: previous?.battlemetricsId ?? null,
+            smartSwitchConfigMap: previous ? previous.smartSwitchConfigMap : {},
+            smartAlarmConfigMap: previous ? previous.smartAlarmConfigMap : {},
+            storageMonitorConfigMap: previous ? previous.storageMonitorConfigMap : {},
+            smartSwitchGroupConfigMap: previous ? previous.smartSwitchGroupConfigMap : {},
+            customVariables: previous ? previous.customVariables : {
                 cargoShipEgressTimeMs: constants.DEFAULT_CARGO_SHIP_EGRESS_TIME_MS,
                 cargoShipHarborDockingTimeMs: constants.DEFAULT_CARGO_SHIP_HARBOR_DOCKING_TIME_MS,
                 cargoShipLootRounds: constants.CARGO_SHIP_LOOT_ROUNDS,
@@ -498,11 +523,11 @@ async function pairingServer(flm: FcmListenerManager, steamId: types.SteamId, bo
                 lockedCrateUnlockTimeMs: constants.DEFAULT_LOCKED_CRATE_UNLOCK_TIME_MS,
                 travellingVendorDurationTimeMs: constants.DEFAULT_TRAVELLING_VENDOR_ACTIVE_TIME_MS
             },
-            dayDurationSeconds: serverInfo ? serverInfo.dayDurationSeconds : null,
-            nightDurationSeconds: serverInfo ? serverInfo.nightDurationSeconds : null
+            dayDurationSeconds: previous ? previous.dayDurationSeconds : null,
+            nightDurationSeconds: previous ? previous.nightDurationSeconds : null
         };
 
-        updatePairingDetails(gInstance.pairingDataMap, serverId, steamId, body);
+        updatePairingDetails(gInstance, serverId, steamId, body);
         if (gInstance.serverToView === null) gInstance.serverToView = serverId;
         gim.updateGuildInstance(guildId);
 
@@ -521,7 +546,6 @@ async function pairingEntitySmartSwitch(flm: FcmListenerManager, steamId: types.
     const logParam = { steamId: steamId };
 
     const credentials = cm.getCredentials(steamId);
-    const serverId = `${body.ip}-${body.port}`;
 
     if (!credentials) {
         log.warn(`${fn} Could not find Credentials.`, logParam);
@@ -533,6 +557,7 @@ async function pairingEntitySmartSwitch(flm: FcmListenerManager, steamId: types.
         const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
         const language = gInstance.generalSettings.language;
 
+        const serverId = pairingServerKey(gInstance.serverInfoMap, body);
         const serverInfo = gInstance.serverInfoMap[serverId];
         if (!serverInfo) {
             log.warn(`${fn} Could not find server.`, { guildId: guildId, serverId: serverId, steamId: steamId });
@@ -553,7 +578,7 @@ async function pairingEntitySmartSwitch(flm: FcmListenerManager, steamId: types.
                 constants.PROXIMITY_SETTING_DEFAULT_METERS
         };
 
-        updatePairingDetails(gInstance.pairingDataMap, serverId, steamId, body);
+        updatePairingDetails(gInstance, serverId, steamId, body);
         gim.updateGuildInstance(guildId);
 
         // TODO! Add the switch to rustplusManager
@@ -570,7 +595,6 @@ async function pairingEntitySmartAlarm(flm: FcmListenerManager, steamId: types.S
     const logParam = { steamId: steamId };
 
     const credentials = cm.getCredentials(steamId);
-    const serverId = `${body.ip}-${body.port}`;
 
     if (!credentials) {
         log.warn(`${fn} Could not find Credentials.`, logParam);
@@ -582,6 +606,7 @@ async function pairingEntitySmartAlarm(flm: FcmListenerManager, steamId: types.S
         const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
         const language = gInstance.generalSettings.language;
 
+        const serverId = pairingServerKey(gInstance.serverInfoMap, body);
         const serverInfo = gInstance.serverInfoMap[serverId];
         if (!serverInfo) {
             log.warn(`${fn} Could not find server.`, { guildId: guildId, serverId: serverId, steamId: steamId });
@@ -603,7 +628,7 @@ async function pairingEntitySmartAlarm(flm: FcmListenerManager, steamId: types.S
             message: exist ? smartAlarmConfigMap[body.entityId].message : lm.getIntl(language, 'yourBaseIsUnderAttack')
         };
 
-        updatePairingDetails(gInstance.pairingDataMap, serverId, steamId, body);
+        updatePairingDetails(gInstance, serverId, steamId, body);
         gim.updateGuildInstance(guildId);
 
         // TODO! Add the alarm to rustplusManager
@@ -620,7 +645,6 @@ async function pairingEntityStorageMonitor(flm: FcmListenerManager, steamId: typ
     const logParam = { steamId: steamId };
 
     const credentials = cm.getCredentials(steamId);
-    const serverId = `${body.ip}-${body.port}`;
 
     if (!credentials) {
         log.warn(`${fn} Could not find Credentials.`, logParam);
@@ -632,6 +656,7 @@ async function pairingEntityStorageMonitor(flm: FcmListenerManager, steamId: typ
         const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
         const language = gInstance.generalSettings.language;
 
+        const serverId = pairingServerKey(gInstance.serverInfoMap, body);
         const serverInfo = gInstance.serverInfoMap[serverId];
         if (!serverInfo) {
             log.warn(`${fn} Could not find server.`, { guildId: guildId, serverId: serverId, steamId: steamId });
@@ -651,7 +676,7 @@ async function pairingEntityStorageMonitor(flm: FcmListenerManager, steamId: typ
             type: exist ? storageMonitorConfigMap[body.entityId].type : StorageMonitorConfigType.Unknown
         };
 
-        updatePairingDetails(gInstance.pairingDataMap, serverId, steamId, body);
+        updatePairingDetails(gInstance, serverId, steamId, body);
         gim.updateGuildInstance(guildId);
 
         // TODO! Add the storagemonitor to rustplusManager
@@ -679,7 +704,6 @@ async function alarmAlarm(flm: FcmListenerManager, steamId: types.SteamId, title
     const logParam = { steamId: steamId };
 
     const credentials = cm.getCredentials(steamId);
-    const serverId = `${body.ip}-${body.port}`;
 
     if (!credentials) {
         log.warn(`${fn} Could not find Credentials.`, logParam);
@@ -692,6 +716,7 @@ async function alarmAlarm(flm: FcmListenerManager, steamId: types.SteamId, title
     for (const guildId of associatedGuilds) {
         const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
 
+        const serverId = pairingServerKey(gInstance.serverInfoMap, body);
         const serverInfo = gInstance.serverInfoMap[serverId];
         if (!serverInfo) {
             log.warn(`${fn} Could not find server.`, { guildId: guildId, serverId: serverId, steamId: steamId });
@@ -712,7 +737,6 @@ async function alarmPlugin(flm: FcmListenerManager, steamId: types.SteamId, titl
     const logParam = { steamId: steamId };
 
     const credentials = cm.getCredentials(steamId);
-    const serverId = `${body.ip}-${body.port}`;
 
     if (!credentials) {
         log.warn(`${fn} Could not find Credentials.`, logParam);
@@ -725,6 +749,7 @@ async function alarmPlugin(flm: FcmListenerManager, steamId: types.SteamId, titl
     for (const guildId of associatedGuilds) {
         const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
 
+        const serverId = pairingServerKey(gInstance.serverInfoMap, body);
         const serverInfo = gInstance.serverInfoMap[serverId];
         if (!serverInfo) {
             log.warn(`${fn} Could not find server.`, { guildId: guildId, serverId: serverId, steamId: steamId });
@@ -762,7 +787,6 @@ async function teamLogin(flm: FcmListenerManager, steamId: types.SteamId, body: 
     const logParam = { steamId: steamId };
 
     const credentials = cm.getCredentials(steamId);
-    const serverId = `${body.ip}-${body.port}`;
 
     if (!credentials) {
         log.warn(`${fn} Could not find Credentials.`, logParam);
@@ -773,6 +797,7 @@ async function teamLogin(flm: FcmListenerManager, steamId: types.SteamId, body: 
     for (const guildId of associatedGuilds) {
         const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
 
+        const serverId = pairingServerKey(gInstance.serverInfoMap, body);
         const serverInfo = gInstance.serverInfoMap[serverId];
         if (!serverInfo) {
             log.warn(`${fn} Could not find server.`, { guildId: guildId, serverId: serverId, steamId: steamId });
@@ -814,15 +839,18 @@ async function newsNews(flm: FcmListenerManager, steamId: types.SteamId, title: 
  * Other functions.
  */
 
-function updatePairingDetails(pairingDataMap: PairingDataMap, serverId: types.ServerId, steamId: types.SteamId,
+function updatePairingDetails(gInstance: GuildInstance, serverId: types.ServerId, steamId: types.SteamId,
     body: PairingServerBody | PairingEntityBody): void {
+    const pairingDataMap = gInstance.pairingDataMap;
+    const server = gInstance.serverInfoMap[serverId];
+    if (body.id) server.relayServerId = body.id;
     if (!(serverId in pairingDataMap)) {
         pairingDataMap[serverId] = {};
     }
     pairingDataMap[serverId][steamId] = {
         valid: true,
-        serverIp: body.ip,
-        appPort: body.port,
+        serverIp: body.ip || server.ip,
+        appPort: body.port || server.port,
         steamId: body.playerId,
         playerToken: Number(body.playerToken)
     };

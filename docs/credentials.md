@@ -26,6 +26,13 @@
 
 ![Teammates Paired with Server](images/bot_setup/teammates_paired.png)
 
+## Rust+ relay connections
+
+Add the optional `rustplus_auth_token` from your Rust+ login to `/credentials add` for the same Steam ID.
+Pair the server in game again so the bot receives its relay ID, then select that Steam account as the server requester.
+After the token expires, run `/credentials add` again with the refreshed token. Existing credentials still receive
+FCM notifications. Each registered Steam account has its own push connection and notification subscriptions.
+
 ## Why is Credentials necessary?
 
 Credentials are necessary in order to get the following:

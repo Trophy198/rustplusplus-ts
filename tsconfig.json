@@ -1,6 +1,8 @@
 {
   "compilerOptions": {
     "target": "ESNext",
+    "rootDir": ".",
+    "ignoreDeprecations": "6.0",
     "module": "commonjs",
     "moduleResolution": "node",
     "resolveJsonModule": true,
@@ -14,5 +16,6 @@
     "types": [
       "node"
     ]
-  }
+  },
+  "include": ["index.ts", "src/**/*", "scripts/**/*"]
 }

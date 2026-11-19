@@ -50,6 +50,7 @@ export interface Credentials {
     version: number;
     steamId: types.SteamId;
     gcm: Gcm;
+    rustplusAuthToken?: string;
     discordUserId: types.UserId;
     issueDate: types.Timestamp;
     expireDate: types.Timestamp;
@@ -114,14 +115,13 @@ export class CredentialsManager {
         try {
             credentialsFileContentParsed = JSON.parse(credentialsFileContent);
         }
-        catch (error) {
-            log.warn(`Credentials file for ${steamId} failed parse. Data: ${credentialsFileContent}, ${error}`);
+        catch {
+            log.warn(`Credentials file for ${steamId} failed JSON parsing.`);
             return ReadError.ParseFailed;
         }
 
         if (!isValidCredentials(credentialsFileContentParsed)) {
-            log.warn(`Credentials file for ${steamId} have invalid format. Data: ` +
-                `${JSON.stringify(credentialsFileContentParsed)}`);
+            log.warn(`Credentials file for ${steamId} have invalid format.`);
             return ReadError.InvalidFormat;
         }
 
@@ -142,7 +142,7 @@ export class CredentialsManager {
 
     private writeCredentialsFile(steamId: types.SteamId, credentials: Credentials): WriteError {
         if (!isValidCredentials(credentials)) {
-            log.warn(`Credentials for ${steamId} have invalid format. Data: ${JSON.stringify(credentials)}`);
+            log.warn(`Credentials for ${steamId} have invalid format.`);
             return WriteError.InvalidFormat;
         }
 
@@ -156,7 +156,7 @@ export class CredentialsManager {
         const credentialsString = JSON.stringify(credentials, null, 2);
 
         try {
-            fs.writeFileSync(credentialsFilePath, credentialsString);
+            fs.writeFileSync(credentialsFilePath, credentialsString, { mode: 0o600 });
         }
         catch (error) {
             log.warn(`Failed to write Credentials file '${credentialsFilePath}', ${error}`);
@@ -345,6 +345,7 @@ export function isValidCredentials(object: unknown): object is Credentials {
     errors.push(vu.validateType('version', obj.version, 'number'));
     errors.push(vu.validateType('steamId', obj.steamId, 'string'));
     errors.push(vu.validateInterface('gcm', obj.gcm, isValidGcm));
+    errors.push(vu.validateType('rustplusAuthToken', obj.rustplusAuthToken, 'string', undefined));
     errors.push(vu.validateType('discordUserId', obj.discordUserId, 'string'));
     errors.push(vu.validateType('issueDate', obj.issueDate, 'number'));
     errors.push(vu.validateType('expireDate', obj.expireDate, 'number'));
@@ -354,7 +355,7 @@ export function isValidCredentials(object: unknown): object is Credentials {
 
     const objectKeys = Object.keys(object);
     const missingKeys = validKeys.filter(key => !objectKeys.includes(key));
-    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const unknownKeys = objectKeys.filter(key => key !== 'rustplusAuthToken' && !validKeys.includes(key));
     const hasAllRequiredKeys = missingKeys.length === 0;
     const hasOnlyValidKeys = unknownKeys.length === 0;
 

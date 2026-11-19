@@ -149,13 +149,17 @@ async function requesterSteamIdSelectMenuHandler(dm: DiscordManager,
     const server = gInstance.serverInfoMap[serverId] as ServerInfo;
     const steamId = interaction.values[0] as types.SteamId;
 
+    const previousRequester = server.requesterSteamId;
     server.requesterSteamId = steamId === 'none' ? null : steamId;
     gim.updateGuildInstance(guildId);
 
     let connectionStatus = ConnectionStatus.Disconnected;
     const rpInstance = rpm.getInstance(guildId, serverId);
     if (rpInstance) {
-        if (server.requesterSteamId !== null) {
+        if (server.relayServerId && previousRequester !== server.requesterSteamId) {
+            await rpInstance.shutdown();
+            await rpInstance.startup();
+        } else if (server.requesterSteamId !== null) {
             await rpInstance.setupRequesting();
         }
         connectionStatus = rpInstance.connectionStatus;

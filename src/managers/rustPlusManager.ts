@@ -25,11 +25,13 @@ import * as path from 'path';
 import * as winston from 'winston';
 import { Logger } from 'winston';
 
-import { log, discordManager as dm, guildInstanceManager as gim, config, localeManager as lm } from '../../index';
+import {
+    log, discordManager as dm, guildInstanceManager as gim, credentialsManager as cm, config, localeManager as lm
+} from '../../index';
 import * as constants from '../utils/constants';
 import * as types from '../utils/types';
 import {
-    getServerId, getIpAndPort, GuildInstance, EventNotificationSettings, ServerInfo
+    GuildInstance, EventNotificationSettings, ServerInfo
 } from './guildInstanceManager';
 import { sendServerMessage } from '../discordUtils/discordMessages';
 import * as rpTeamInfoHandler from '../handlers/rustPlusTeamInfoHandler';
@@ -92,18 +94,16 @@ export class RustPlusManager {
     }
 
     public addInstance(guildId: types.GuildId, serverId: types.ServerId): boolean {
-        const ipAndPort = getIpAndPort(serverId);
-
         if (!Object.hasOwn(this.rustPlusInstanceMap, guildId)) {
             this.rustPlusInstanceMap[guildId] = {};
         }
 
-        if (Object.hasOwn(this.rustPlusInstanceMap, serverId)) {
+        if (this.hasInstance(guildId, serverId)) {
             log.warn(`Instance already exist.`, { guildId: guildId, serverId: serverId });
             return false;
         }
 
-        this.rustPlusInstanceMap[guildId][serverId] = new RustPlusInstance(guildId, ipAndPort.ip, ipAndPort.port);
+        this.rustPlusInstanceMap[guildId][serverId] = new RustPlusInstance(guildId, serverId);
         return true;
     }
 
@@ -132,8 +132,7 @@ export class RustPlusManager {
 export class RustPlusInstance {
     private lg: winston.Logger;
     public guildId: types.GuildId;
-    public ip: string;
-    public port: string;
+    private relaySteamId?: string;
     public serverId: types.ServerId;
     public serverName: string;
 
@@ -167,18 +166,17 @@ export class RustPlusInstance {
     public timers: { [index: number]: TimersMetaData };
     public informationChannelCounter: number;
 
-    constructor(guildId: types.GuildId, ip: string, port: string) {
+    constructor(guildId: types.GuildId, serverId: types.ServerId) {
         this.guildId = guildId;
-        this.ip = ip;
-        this.port = port;
-        this.serverId = getServerId(ip, port);
+        this.serverId = serverId;
 
         this.lg = log.child({ guildId: guildId, serverId: this.serverId });
 
         const gInstance = gim.getGuildInstance(this.guildId) as GuildInstance;
-        this.serverName = gInstance.serverInfoMap[this.serverId].name;
+        const server = gInstance.serverInfoMap[serverId];
+        this.serverName = server.name;
 
-        this.rustPlus = new rp.RustPlus(ip, port, false, log);
+        this.rustPlus = new rp.RustPlus(server.ip, server.port, false, log);
         this.connectionStatus = ConnectionStatus.Disconnected;
         this.reconnectTimeoutId = undefined;
         this.reconnectTimeoutSeconds = constants.DEFAULT_RECONNECT_TIMEOUT_SECONDS;
@@ -220,12 +218,26 @@ export class RustPlusInstance {
 
     public async startup() {
         await this.loadRustPlusEvents();
-        await this.rustPlus.connect();
+        const guild = gim.getGuildInstance(this.guildId) as GuildInstance;
+        const server = guild.serverInfoMap[this.serverId];
+        const steamId = server.requesterSteamId;
+        const authToken = steamId ? cm.getCredentials(steamId)?.rustplusAuthToken : undefined;
+        if (server.relayServerId && steamId && authToken) {
+            this.relaySteamId = steamId;
+            await this.rustPlus.connect({ serverId: server.relayServerId, steamId, authToken });
+        } else if (server.ip && server.port) {
+            this.relaySteamId = undefined;
+            await this.rustPlus.connect();
+        } else {
+            this.lg.warn('Rust+ relay needs a requester with a Rust+ auth token. Update /credentials add.');
+            await this.scheduleReconnect();
+        }
 
         /* Wait for 'connected' event before updating server embed. */
     }
 
     public async shutdown() {
+        this.connectionStatus = ConnectionStatus.Disconnected;
         this.rustPlus.removeAllListeners();
         await this.rustPlus.disconnect();
         this.clearAllData();
@@ -583,6 +595,7 @@ export class RustPlusInstance {
     public async validatePairingData() {
         const gInstance = gim.getGuildInstance(this.guildId) as GuildInstance;
         for (const [steamId, pairingData] of Object.entries(gInstance.pairingDataMap[this.serverId])) {
+            if (this.relaySteamId && steamId !== this.relaySteamId) continue;
             const rpInfo = await this.rustPlus.getInfoAsync(pairingData.steamId, pairingData.playerToken);
             if (rp.isValidAppResponse(rpInfo, log)) {
                 if (!rp.isValidAppInfo(rpInfo.info, log)) {

@@ -209,7 +209,7 @@ export function getSmartSwitchButtons(guildId: types.GuildId, serverId: types.Se
     active: boolean): discordjs.ActionRowBuilder<discordjs.ButtonBuilder> {
     const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
     const language = gInstance.generalSettings.language;
-    const identifier = JSON.stringify({ 'serverId': serverId, 'entityId': entityId });
+    const identifier = JSON.stringify([serverId, entityId]);
 
     return new discordjs.ActionRowBuilder<discordjs.ButtonBuilder>().addComponents(
         getButton({
@@ -238,7 +238,7 @@ export function getSmartAlarmButtons(guildId: types.GuildId, serverId: types.Ser
     const serverInfo = gInstance.serverInfoMap[serverId] as ServerInfo;
     const smartAlarmConfig = serverInfo.smartAlarmConfigMap[entityId] as SmartAlarmConfig;
     const language = gInstance.generalSettings.language;
-    const identifier = JSON.stringify({ 'serverId': serverId, 'entityId': entityId });
+    const identifier = JSON.stringify([serverId, entityId]);
 
     return new discordjs.ActionRowBuilder<discordjs.ButtonBuilder>().addComponents(
         getButton({
@@ -273,7 +273,7 @@ export function getStorageMonitorButtons(guildId: types.GuildId, serverId: types
     const serverInfo = gInstance.serverInfoMap[serverId] as ServerInfo;
     const storageMonitorConfig = serverInfo.storageMonitorConfigMap[entityId] as StorageMonitorConfig;
     const language = gInstance.generalSettings.language;
-    const identifier = JSON.stringify({ 'serverId': serverId, 'entityId': entityId });
+    const identifier = JSON.stringify([serverId, entityId]);
 
     const everyoneButton = getButton({
         customId: `StorageMonitorEveryone${identifier}`,

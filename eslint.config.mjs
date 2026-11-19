@@ -18,8 +18,18 @@ export default defineConfig([
   },
   {
     ignores: [
-      "temp"
+      "temp", "**/dist/**", "packages/rustplus-ts/src/interfaces/rustplus.ts"
     ]
   },
   tseslint.configs.recommended,
+  {
+    files: ["tests/**/*.cjs"],
+    languageOptions: { sourceType: "commonjs", globals: globals.node },
+    rules: { "@typescript-eslint/no-require-imports": "off" }
+  },
+  {
+    files: ["tools/rustplus-protocol/*.mjs"],
+    languageOptions: { globals: globals.node },
+    rules: { "max-len": ["error", { code: 140, ignoreStrings: true, ignoreTemplateLiterals: true }] }
+  },
 ]);

@@ -111,7 +111,7 @@ export function getSmartSwitchSelectMenu(guildId: types.GuildId, serverId: types
     const serverInfo = gInstance.serverInfoMap[serverId] as ServerInfo;
     const smartSwitchConfig = serverInfo.smartSwitchConfigMap[entityId] as SmartSwitchConfig;
     const language = gInstance.generalSettings.language;
-    const identifier = JSON.stringify({ "serverId": serverId, "entityId": entityId });
+    const identifier = JSON.stringify([serverId, entityId]);
 
     const autoSettingLabel = lm.getIntl(language, 'autoSettingLabel');
     const autoSettingMap = {

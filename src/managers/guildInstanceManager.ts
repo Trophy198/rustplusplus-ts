@@ -263,6 +263,7 @@ export type StorageMonitorConfigMap = { [entityId: types.EntityId]: StorageMonit
 export type SmartSwitchGroupConfigMap = { [groupId: types.GroupId]: SmartSwitchGroupConfig };
 
 export interface ServerInfo {
+    relayServerId?: string;
     /* From FCM notification */
     name: string;
     desc: string;
@@ -1456,6 +1457,7 @@ export function isValidServerInfo(object: unknown): object is ServerInfo {
     errors.push(vu.validateType('img', obj.img, 'string'));
     errors.push(vu.validateType('logo', obj.logo, 'string'));
     errors.push(vu.validateType('url', obj.url, 'string'));
+    errors.push(vu.validateType('relayServerId', obj.relayServerId, 'string', undefined));
     errors.push(vu.validateType('ip', obj.ip, 'string'));
     errors.push(vu.validateType('port', obj.port, 'string'));
     errors.push(vu.validateType('messageId', obj.messageId, 'string', null));
@@ -1481,7 +1483,7 @@ export function isValidServerInfo(object: unknown): object is ServerInfo {
 
     const objectKeys = Object.keys(object);
     const missingKeys = validKeys.filter(key => !objectKeys.includes(key));
-    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const unknownKeys = objectKeys.filter(key => key !== 'relayServerId' && !validKeys.includes(key));
     const hasAllRequiredKeys = missingKeys.length === 0;
     const hasOnlyValidKeys = unknownKeys.length === 0;
 

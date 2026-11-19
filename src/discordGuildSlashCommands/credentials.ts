@@ -18,6 +18,7 @@
 
 */
 
+import { normalizeRelayToken } from '../utils/rustRelay';
 import * as discordjs from 'discord.js';
 
 import { log, config, localeManager as lm, credentialsManager as cm, fcmListenerManager as flm } from '../../index';
@@ -57,7 +58,10 @@ export default {
 				.addNumberOption(option => option
 					.setName('expire_date')
 					.setDescription(lm.getIntl(language, 'slashCommandDescCredentialsAddExpireDate'))
-					.setRequired(true)))
+					.setRequired(true))
+				.addStringOption(option => option
+					.setName('rustplus_auth_token')
+					.setDescription('Rust+ login token for the Facepunch relay')))
 			.addSubcommand(subcommand => subcommand
 				.setName('remove')
 				.setDescription(lm.getIntl(language, 'slashCommandDescCredentialsRemove'))
@@ -145,7 +149,14 @@ async function executeAdd(dm: DiscordManager, interaction: discordjs.ChatInputCo
 	}
 
 	const oldCredentials = cm.getCredentials(steamId);
+	const rawToken = interaction.options.getString('rustplus_auth_token');
+	const token = rawToken === null ? oldCredentials?.rustplusAuthToken : normalizeRelayToken(rawToken, steamId);
+	if (token === null) {
+		await interaction.editReply('Invalid Rust+ relay token or Steam ID mismatch.');
+		return false;
+	}
 	const newCredentials: Credentials = {
+		...(token && { rustplusAuthToken: token }),
 		version: VERSION,
 		steamId: steamId,
 		gcm: {
@@ -166,12 +177,12 @@ async function executeAdd(dm: DiscordManager, interaction: discordjs.ChatInputCo
 				logParam);
 			return false;
 		}
-
-		/* Credentials for steamId already exist, turn off fcm listener */
-		flm.stopListener(steamId);
 	}
 
-	cm.addCredentials(steamId, newCredentials);
+	if (!cm.addCredentials(steamId, newCredentials)) {
+		await interaction.editReply('Could not save credentials.');
+		return false;
+	}
 	cm.scheduleExpireTimeout(steamId, dm);
 	flm.startListener(steamId);
 
