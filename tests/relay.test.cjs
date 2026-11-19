@@ -72,10 +72,16 @@ test('real WebSocket handshake, binary requests, broadcasts and account binding'
     const direct = once(server, 'connection');
     const reopened = once(client, 'connected');
     await client.connect();
-    const [, legacy] = await direct;
+    const [directSocket, legacy] = await direct;
     await reopened;
     assert.equal(urls[1], local);
     assert.equal(legacy.headers['sec-websocket-protocol'], undefined);
+    const pending = client.sendRequestAsync({ getInfo: {} }, steamId, 123, 180000);
+    const closed = once(client, 'disconnected');
+    directSocket.close();
+    await closed;
+    assert.match((await pending).message, /connection closed/);
+    assert.equal(client.replenishInterval, null);
 });
 
 test('uint64 codec and validators agree for requests, broadcasts and camera entities', () => {

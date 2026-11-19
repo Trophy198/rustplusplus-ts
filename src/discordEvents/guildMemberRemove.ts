@@ -27,8 +27,6 @@ import {
 import * as discordMessages from '../discordUtils/discordMessages';
 import { ConnectionStatus } from '../managers/rustPlusManager';
 import { DiscordManager } from '../managers/discordManager';
-import { Credentials } from '../managers/credentialsManager';
-import * as types from '../utils/types';
 import { GuildInstance } from '../managers/guildInstanceManager';
 
 export const name = 'guildMemberRemove';
@@ -42,22 +40,13 @@ export async function execute(dm: DiscordManager, member: discordjs.GuildMember)
 
     log.info(`${fn} Member '${member.displayName}' left guild.`, logParam);
 
-    const associatedSteamIds: types.SteamId[] = [];
-
-    /* Check if credentials have no associated guilds */
-    const credentialSteamIds = cm.getCredentialSteamIds();
-    for (const steamId of credentialSteamIds) {
-        const credentials = cm.getCredentials(steamId) as Credentials;
-        if (credentials.discordUserId !== member.id) continue;
-
-        associatedSteamIds.push(steamId);
-        const associatedGuilds = await dm.getGuildIdsForUser(credentials.discordUserId);
-
-        /* If no longer associated with any guilds, stop fcm listener and remove credentials */
-        if (associatedGuilds.length === 0) {
+    const registeredIds = cm.getCredentialSteamIdsFromDiscordUserId(member.id);
+    const guilds = registeredIds.length ? await dm.getGuildIdsForUser(member.id) : [];
+    const associatedSteamIds = registeredIds.filter(id => cm.getCredentials(id)?.discordUserId === member.id);
+    if (guilds.length === 0) {
+        for (const steamId of associatedSteamIds) {
             flm.stopListener(steamId);
             cm.deleteCredentials(steamId);
-            continue;
         }
     }
 

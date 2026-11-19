@@ -25,7 +25,6 @@ import {
     rustPlusManager as rpm
 } from '../../index';
 import { DiscordManager } from '../managers/discordManager';
-import { Credentials } from '../managers/credentialsManager';
 import { GuildInstance } from '../managers/guildInstanceManager';
 
 export const name = 'guildDelete';
@@ -40,16 +39,12 @@ export async function execute(dm: DiscordManager, guild: discordjs.Guild) {
     log.info(`${fn} Client left guild.`, logParam);
 
     /* Check if credentials have no associated guilds */
-    const credentialSteamIds = cm.getCredentialSteamIds();
-    for (const steamId of credentialSteamIds) {
-        const credentials = cm.getCredentials(steamId) as Credentials;
-        const associatedGuilds = await dm.getGuildIdsForUser(credentials.discordUserId);
-
-        /* If no longer associated with any guilds, stop fcm listener and remove credentials */
-        if (associatedGuilds.length === 0) {
+    for (const [owner, steamIds] of Object.entries(cm.getDiscordUserIdToSteamIdsMap())) {
+        if ((await dm.getGuildIdsForUser(owner)).length > 0) continue;
+        for (const steamId of steamIds) {
+            if (cm.getCredentials(steamId)?.discordUserId !== owner) continue;
             flm.stopListener(steamId);
             cm.deleteCredentials(steamId);
-            continue;
         }
     }
 

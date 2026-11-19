@@ -38,9 +38,12 @@ export async function execute(rpInstance: RustPlusInstance) {
 
     rpInstance.stopReconnectionTimer();
 
+    const session = rpInstance.sessionId;
     await rpInstance.validatePairingData();
-    await rpInstance.setupRequesting();
-
+    if (session !== rpInstance.sessionId) return;
     rpInstance.connectionStatus = ConnectionStatus.Connected;
+    await rpInstance.setupRequesting();
+    if (session !== rpInstance.sessionId) return;
+
     await sendServerMessage(dm, rpInstance.guildId, rpInstance.serverId, ConnectionStatus.Connected);
 }

@@ -44,8 +44,25 @@ const NOTIFICATION_EXPIRATION_TIME_MS = 10_000;
 // The pinned receiver awaits both proto loading and check-in before opening TLS.
 // Its retry path also calls these hooks. A retired credential must never open a new socket.
 class CredentialReceiver extends PushReceiverClient {
+    private static schema?: Promise<unknown>;
+
     constructor(androidId: string, securityToken: string, steamId: string) {
         super(androidId, securityToken, [], steamId);
+    }
+
+    async _initProto() {
+        if (!CredentialReceiver.schema) {
+            CredentialReceiver.schema = super._initProto().then(() => this._proto).catch((error: unknown) => {
+                CredentialReceiver.schema = undefined;
+                this._protoPromise = null;
+                throw error;
+            });
+        }
+        this._proto = await CredentialReceiver.schema;
+    }
+
+    matches(androidId: string, securityToken: string): boolean {
+        return this._androidId === androidId && this._securityToken === securityToken;
     }
 
     async _checkIn() {
@@ -248,17 +265,16 @@ export class FcmListenerManager {
         const fn = `[${this.constructor.name}: startListener]`;
         const logParam = { steamId: steamId };
 
-        if (this.isListenerActive(steamId)) {
-            this.stopListener(steamId);
-        }
-
         const credentials = cm.getCredentials(steamId);
         if (!credentials) {
+            this.stopListener(steamId);
             return false;
         }
 
         const androidId = credentials.gcm.androidId;
         const securityToken = credentials.gcm.securityToken;
+        if (this.listeners[steamId]?.matches(androidId, securityToken)) return true;
+        this.stopListener(steamId);
         const client = new CredentialReceiver(androidId, securityToken, steamId);
         this.listeners[steamId] = client;
         client.on('ON_DATA_RECEIVED', (data: unknown) => {

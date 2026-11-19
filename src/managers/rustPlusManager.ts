@@ -23,7 +23,6 @@ import * as rp from 'rustplus-ts';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as winston from 'winston';
-import { Logger } from 'winston';
 
 import {
     log, discordManager as dm, guildInstanceManager as gim, credentialsManager as cm, config, localeManager as lm
@@ -115,6 +114,7 @@ export class RustPlusManager {
 
         this.rustPlusInstanceMap[guildId][serverId].shutdown();
         delete this.rustPlusInstanceMap[guildId][serverId];
+        if (!Object.keys(this.rustPlusInstanceMap[guildId]).length) delete this.rustPlusInstanceMap[guildId];
         return true;
     }
 
@@ -133,6 +133,11 @@ export class RustPlusInstance {
     private lg: winston.Logger;
     public guildId: types.GuildId;
     private relaySteamId?: string;
+    private started = false;
+    private starting?: Promise<void>;
+    private generation = 0;
+    public get sessionId() { return this.generation; }
+    private pollVersion = 0;
     public serverId: types.ServerId;
     public serverName: string;
 
@@ -216,8 +221,32 @@ export class RustPlusInstance {
             .map(file => file.replace(/\.ts$/, ''));
     }
 
-    public async startup() {
-        await this.loadRustPlusEvents();
+    public startup(): Promise<void> {
+        if (this.starting) return this.starting;
+        if (this.started) return Promise.resolve();
+        this.started = true;
+        const session = ++this.generation;
+        this.stopReconnectionTimer();
+        this.starting = this.openSession(session).finally(() => {
+            if (session === this.sessionId) this.starting = undefined;
+        });
+        return this.starting;
+    }
+
+    private async openSession(session: number) {
+        try {
+            await this.loadRustPlusEvents(session);
+            if (session !== this.sessionId) return;
+            await this.connect();
+        } catch (error) {
+            if (session === this.sessionId) {
+                this.lg.warn(`Rust+ connection failed: ${error}`);
+                await this.scheduleReconnect();
+            }
+        }
+    }
+
+    private async connect() {
         const guild = gim.getGuildInstance(this.guildId) as GuildInstance;
         const server = guild.serverInfoMap[this.serverId];
         const steamId = server.requesterSteamId;
@@ -238,38 +267,39 @@ export class RustPlusInstance {
 
     public async shutdown() {
         this.connectionStatus = ConnectionStatus.Disconnected;
+        await this.closeSession();
+    }
+
+    private closeSession() {
+        ++this.generation;
+        this.started = false;
+        this.starting = undefined;
         this.rustPlus.removeAllListeners();
-        await this.rustPlus.disconnect();
         this.clearAllData();
+        return this.rustPlus.disconnect();
     }
 
     public async scheduleReconnect() {
-        this.rustPlus.removeAllListeners();
-        await this.rustPlus.disconnect();
-
-        if (this.connectionStatus !== ConnectionStatus.Reconnecting) {
-            this.connectionStatus = ConnectionStatus.Reconnecting;
-            await sendServerMessage(dm, this.guildId, this.serverId, this.connectionStatus);
-            this.clearAllData();
-            this.reconnectTimeoutSeconds = constants.DEFAULT_RECONNECT_TIMEOUT_SECONDS;
-        }
-        else {
-            this.reconnectTimeoutSeconds = Math.min(this.reconnectTimeoutSeconds * 2,
-                constants.MAX_RECONNECT_TIMEOUT_SECONDS);
-        }
-
+        if (!this.started) return;
+        const firstRetry = this.connectionStatus !== ConnectionStatus.Reconnecting;
+        const closing = this.closeSession();
+        this.connectionStatus = ConnectionStatus.Reconnecting;
+        this.reconnectTimeoutSeconds = firstRetry ? constants.DEFAULT_RECONNECT_TIMEOUT_SECONDS :
+            Math.min(this.reconnectTimeoutSeconds * 2, constants.MAX_RECONNECT_TIMEOUT_SECONDS);
         this.lg.info(`Reconnecting in ${this.reconnectTimeoutSeconds} seconds.`);
-
         this.startReconnectionTimer();
+        if (firstRetry) await sendServerMessage(dm, this.guildId, this.serverId, this.connectionStatus);
+        await closing;
     }
 
-    private async loadRustPlusEvents() {
+    private async loadRustPlusEvents(session: number) {
         const rustPlusEventFilesPath = path.join(__dirname, '..', 'rustPlusEvents');
         const rustPlusEventFiles = fs.readdirSync(rustPlusEventFilesPath).filter(file => file.endsWith('.ts'));
 
         for (const file of rustPlusEventFiles) {
             const filePath = path.join(rustPlusEventFilesPath, file);
-            const { name, execute } = await import(filePath)
+            const { name, execute } = await import(filePath);
+            if (session !== this.sessionId) return;
 
             this.rustPlus.on(name, (...args: unknown[]) => execute(this, ...args));
         }
@@ -278,6 +308,7 @@ export class RustPlusInstance {
     private clearAllData() {
         this.stopReconnectionTimer();
         this.stopServerPollingHandler();
+        this.lastServerPollSuccessful = false;
 
         this.inGameTeamChatQueue = [];
         clearTimeout(this.inGameTeamChatTimeoutId);
@@ -288,10 +319,8 @@ export class RustPlusInstance {
         this.rpTime = null;
         this.rpMap = null;
         this.rpTeamInfo = null;
+        this.rpMapMarkers?.stopTimers();
         this.rpMapMarkers = null;
-
-        // TODO! Remove timers example: pollingTimer, inGameChatTimeout, customTimers like lockedCrate,
-        // cargoship leave etc...
 
         for (const timer of Object.values(this.timers)) {
             timer.timer.stop();
@@ -307,7 +336,8 @@ export class RustPlusInstance {
         this.lg.info(`Start Reconnection Timer.`);
 
         this.reconnectTimeoutId = setTimeout(() => {
-            this.startup();
+            this.reconnectTimeoutId = undefined;
+            void this.startup();
         }, this.reconnectTimeoutSeconds * 1000);
     }
 
@@ -318,27 +348,36 @@ export class RustPlusInstance {
         this.reconnectTimeoutId = undefined;
     }
 
-    public startServerPollingHandler() {
-        if (this.serverPollingHandlerIntervalId !== undefined) {
-            this.stopServerPollingHandler();
-        }
-
-        this.lg.info(`Start Server Polling Handler.`);
-
-        this.serverPolling(true);
-        this.serverPollingHandlerIntervalId = setInterval(() => {
-            this.serverPolling();
-        }, this.serverPollingHandlerIntervalSeconds * 1000);
+    public startServerPollingHandler(initialInfo?: rp.AppInfo) {
+        if (this.serverPollingHandlerIntervalId !== undefined) return;
+        const version = this.pollVersion;
+        let inFlight = false;
+        const run = async (info?: rp.AppInfo) => {
+            if (inFlight || version !== this.pollVersion) return;
+            inFlight = true;
+            try {
+                await this.serverPolling(version, info);
+            } catch (error) {
+                if (version === this.pollVersion) {
+                    this.lastServerPollSuccessful = false;
+                    this.lg.error(`Server polling failed: ${error}`);
+                }
+            } finally {
+                inFlight = false;
+            }
+        };
+        const intervalMs = this.serverPollingHandlerIntervalSeconds * 1000;
+        this.serverPollingHandlerIntervalId = setInterval(() => void run(), intervalMs);
+        void run(initialInfo);
     }
 
     public stopServerPollingHandler() {
-        this.lg.info(`Stop Server Polling Handler.`);
-
+        ++this.pollVersion;
         clearInterval(this.serverPollingHandlerIntervalId);
         this.serverPollingHandlerIntervalId = undefined;
     }
 
-    private async serverPolling(firstPoll: boolean = false) {
+    private async serverPolling(version: number, initialInfo?: rp.AppInfo) {
         const gInstance = gim.getGuildInstance(this.guildId) as GuildInstance;
         const server = gInstance.serverInfoMap[this.serverId];
         const requesterSteamId = server.requesterSteamId;
@@ -351,61 +390,50 @@ export class RustPlusInstance {
             return;
         }
 
-        const rpInfo = await this.rustPlus.getInfoAsync(pairingData.steamId, pairingData.playerToken);
-        if (!this.validateServerPollResponse(rpInfo, 'info', rp.isValidAppInfo)) return;
-        const rpTime = await this.rustPlus.getTimeAsync(pairingData.steamId, pairingData.playerToken);
-        if (!this.validateServerPollResponse(rpTime, 'time', rp.isValidAppTime)) return;
-        const rpTeamInfo = await this.rustPlus.getTeamInfoAsync(pairingData.steamId, pairingData.playerToken);
-        if (!this.validateServerPollResponse(rpTeamInfo, 'teamInfo', rp.isValidAppTeamInfo)) return;
-        const rpMapMarkers = await this.rustPlus.getMapMarkersAsync(pairingData.steamId, pairingData.playerToken);
-        if (!this.validateServerPollResponse(rpMapMarkers, 'mapMarkers', rp.isValidAppMapMarkers)) return;
+        const { steamId, playerToken } = pairingData;
+        const info = initialInfo ?? await this.pollResponse('info',
+            this.rustPlus.getInfoAsync(steamId, playerToken), version);
+        if (!info || version !== this.pollVersion) return;
+        const time = await this.pollResponse('time', this.rustPlus.getTimeAsync(steamId, playerToken), version);
+        if (!time || version !== this.pollVersion) return;
+        const teamInfo = await this.pollResponse('teamInfo',
+            this.rustPlus.getTeamInfoAsync(steamId, playerToken), version);
+        if (!teamInfo || version !== this.pollVersion) return;
+        const mapMarkers = await this.pollResponse('mapMarkers',
+            this.rustPlus.getMapMarkersAsync(steamId, playerToken), version);
+        if (!mapMarkers || version !== this.pollVersion) return;
 
-        // if last false and not true, update embed
         this.lastServerPollSuccessful = true;
         this.lastServerPollSuccessfulTimestampSeconds = Math.floor(Date.now() / 1000);
 
-        /**
-         * If reached this, then all rustplus requests was successful.
-         * Continue with updating structures
-         */
-
-        const info = ((rpInfo as rp.AppResponse).info as rp.AppInfo);
-        const time = ((rpTime as rp.AppResponse).time as rp.AppTime);
-        const mapMarkers = ((rpMapMarkers as rp.AppResponse).mapMarkers as rp.AppMapMarkers);
-        const teamInfo = ((rpTeamInfo as rp.AppResponse).teamInfo as rp.AppTeamInfo);
-
-        if (firstPoll || this.rpInfo === null || this.rpTime === null) {
-            console.log('FIRST POLL')
-            this.rpInfo = new RustPlusInfo(this, info);
-            this.rpTime = new RustPlusTime(this, time);
-            this.rpMapMarkers = new RustPlusMapMarkers(this, mapMarkers);
+        this.rpInfo ??= new RustPlusInfo(this, info);
+        this.rpTime ??= new RustPlusTime(this, time);
+        this.rpMapMarkers ??= new RustPlusMapMarkers(this, mapMarkers);
+        if (!this.rpTeamInfo) {
             this.rpTeamInfo = new RustPlusTeamInfo(this, teamInfo);
+        } else {
+            await rpTeamInfoHandler.handler(this, teamInfo, () => version === this.pollVersion);
+            if (version !== this.pollVersion) return;
+            this.rpTeamInfo.updateTeamInfo(teamInfo);
         }
-        else {
-            console.log('POLL')
-        }
-
-        // TODO! teamHandler
-        await rpTeamInfoHandler.handler(this, teamInfo);
-        (this.rpTeamInfo as RustPlusTeamInfo).updateTeamInfo(teamInfo);
-        // TODO! update rpTeamInfo
 
         // TODO! smartSwitchHandler
 
         // TODO! timeHandler
         await rpInfoHandler.handler(this, info);
+        if (version !== this.pollVersion) return;
         await rpTimeHandler.handler(this, time);
+        if (version !== this.pollVersion) return;
 
         (this.rpInfo as RustPlusInfo).updateInfo(info);
         (this.rpTime as RustPlusTime).updateTime(time);
         (this.rpMapMarkers as RustPlusMapMarkers).updateMapMarkers(mapMarkers);
-        (this.rpTeamInfo as RustPlusTeamInfo).updateTeamInfo(teamInfo);
 
         // TODO! smartAlarmHandler
         // TODO! storageMonitorHandler
 
         // TODO! informationChannelHandler
-        await informationChannelHandler.handler(this);
+        await informationChannelHandler.handler(this, () => version === this.pollVersion);
     }
 
     public inGameTeamChatQueueMessage(message: string | string[]) {
@@ -533,72 +561,56 @@ export class RustPlusInstance {
         }
     }
 
-    public async validateServerPollResponse(response: rp.AppResponse | Error | rp.ConsumeTokensError,
-        responseParam: keyof rp.AppResponse, validationCallback: (input: unknown, logger: Logger | null) => boolean):
-        Promise<boolean> {
-        const gInstance = gim.getGuildInstance(this.guildId) as GuildInstance;
-        const requesterSteamId = gInstance.serverInfoMap[this.serverId].requesterSteamId;
+    private async pollResponse<K extends 'info' | 'time' | 'teamInfo' | 'mapMarkers' | 'map'>(key: K,
+        request: Promise<rp.AppResponse | Error | rp.ConsumeTokensError>, version: number) {
+        const guild = gim.getGuildInstance(this.guildId) as GuildInstance;
+        const requester = guild.serverInfoMap[this.serverId].requesterSteamId;
+        const pairing = requester && guild.pairingDataMap[this.serverId]?.[requester];
+        const response = await request;
+        if (version !== this.pollVersion || guild.serverInfoMap[this.serverId]?.requesterSteamId !== requester ||
+            !requester || guild.pairingDataMap[this.serverId]?.[requester] !== pairing) return;
 
-        if (requesterSteamId === null) return false;
-
-        const pairingData = gInstance.pairingDataMap[this.serverId]?.[requesterSteamId] ?? null;
-
+        // The envelope validator recursively checks the selected payload.
         if (rp.isValidAppResponse(response, log)) {
-            if (!validationCallback(response[responseParam], log)) {
-                if (rp.isValidAppError(response.error, log)) {
-                    this.lg.warn(`AppError: ${response.error.error}`);
-                    if (this.rustPlus.getAppResponseError(response) === rp.AppResponseError.NotFound) {
-                        /* pairingData is no longer valid. */
-                        if (pairingData && pairingData.valid) {
-                            this.lg.warn(`PairingData no longer valid for ${requesterSteamId}.`);
-                            pairingData.valid = false;
-                            gim.updateGuildInstance(this.guildId);
-                            await sendServerMessage(dm, this.guildId, this.serverId, this.connectionStatus);
-                        }
-                    }
-                }
-                else {
-                    this.lg.error(`We got completely wrong response: ${JSON.stringify(response)}`);
-                }
-
-                // TODO! Send message in activity channel saying that the requesters request was not successful.
-
-                this.lastServerPollSuccessful = false;
-                return false;
-            }
-            else {
-                if (pairingData && !pairingData.valid) {
-                    pairingData.valid = true;
+            const payload = response[key];
+            if (payload !== undefined && !response.error) {
+                if (pairing && !pairing.valid) {
+                    pairing.valid = true;
                     gim.updateGuildInstance(this.guildId);
                     await sendServerMessage(dm, this.guildId, this.serverId, this.connectionStatus);
                 }
+                return payload;
             }
-        }
-        else {
-            /* Error or rp.ConsumeTokensError */
-            if (response instanceof Error) {
-                this.lg.error(`$Error: ${response.message}`);
-            }
-            else {
-                this.lg.error(`ConsumeTokensError: ${response}`);
-            }
-
-            // TODO! Perhaps send the message here too
-
             this.lastServerPollSuccessful = false;
-            return false;
+            this.lg.warn(`Rust+ ${key}: ${response.error?.error ?? 'missing response field'}`);
+            if (pairing && pairing.valid &&
+                this.rustPlus.getAppResponseError(response) === rp.AppResponseError.NotFound) {
+                pairing.valid = false;
+                gim.updateGuildInstance(this.guildId);
+                await sendServerMessage(dm, this.guildId, this.serverId, this.connectionStatus);
+            }
+        } else {
+            this.lastServerPollSuccessful = false;
+            this.lg.warn(`Invalid Rust+ ${key} response.`, {
+                error: response instanceof Error ? response.message : response
+            });
         }
-
-        return true;
+        return undefined;
     }
 
     public async validatePairingData() {
         const gInstance = gim.getGuildInstance(this.guildId) as GuildInstance;
-        for (const [steamId, pairingData] of Object.entries(gInstance.pairingDataMap[this.serverId])) {
+        const session = this.sessionId;
+        let changed = false;
+        for (const [steamId, pairingData] of Object.entries(gInstance.pairingDataMap[this.serverId] ?? {})) {
+            // setupRequesting validates the selected account once, on its own connection.
+            if (steamId === gInstance.serverInfoMap[this.serverId].requesterSteamId) continue;
             if (this.relaySteamId && steamId !== this.relaySteamId) continue;
             const rpInfo = await this.rustPlus.getInfoAsync(pairingData.steamId, pairingData.playerToken);
+            if (session !== this.sessionId) return;
+            const wasValid = pairingData.valid;
             if (rp.isValidAppResponse(rpInfo, log)) {
-                if (!rp.isValidAppInfo(rpInfo.info, log)) {
+                if (rpInfo.info === undefined) {
                     if (rp.isValidAppError(rpInfo.error, log)) {
                         this.lg.warn(`SteamId: ${steamId}, AppError: ${rpInfo.error.error}`);
                         if (this.rustPlus.getAppResponseError(rpInfo) === rp.AppResponseError.NotFound) {
@@ -623,11 +635,15 @@ export class RustPlusInstance {
                     this.lg.error(`ConsumeTokensError: ${rpInfo}`);
                 }
             }
+            changed ||= wasValid !== pairingData.valid;
         }
-        gim.updateGuildInstance(this.guildId);
+        if (changed) gim.updateGuildInstance(this.guildId);
     }
 
     public async setupRequesting() {
+        this.stopServerPollingHandler();
+        const version = this.pollVersion;
+        this.rpTeamInfo = null;
         const gInstance = gim.getGuildInstance(this.guildId) as GuildInstance;
         const server = gInstance.serverInfoMap[this.serverId];
         const requesterSteamId = server.requesterSteamId;
@@ -636,19 +652,15 @@ export class RustPlusInstance {
         const pairingData = gInstance.pairingDataMap[this.serverId]?.[requesterSteamId] ?? null;
         if (!pairingData) return;
 
-        const rpInfo = await this.rustPlus.getInfoAsync(pairingData.steamId, pairingData.playerToken);
-        if (!this.validateServerPollResponse(rpInfo, 'info', rp.isValidAppInfo)) return;
-        const info = ((rpInfo as rp.AppResponse).info as rp.AppInfo);
+        const { steamId, playerToken } = pairingData;
+        const requestedAt = Date.now();
+        const info = await this.pollResponse('info',
+            this.rustPlus.getInfoAsync(steamId, playerToken), version);
+        if (!info || version !== this.pollVersion) return;
         this.rpInfo = new RustPlusInfo(this, info);
-
-        const rpMap = await this.rustPlus.getMapAsync(pairingData.steamId, pairingData.playerToken, true,
-            3 * 60 * 1000); /* 3 min timeout */
-        if (!this.validateServerPollResponse(rpMap, 'map', rp.isValidAppMap)) {
-            // TODO! Server connection invalid message, invalid pairingData?
-            return;
-        }
-
-        const map = ((rpMap as rp.AppResponse).map as rp.AppMap);
+        const map = await this.pollResponse('map',
+            this.rustPlus.getMapAsync(steamId, playerToken, true, 180_000), version);
+        if (!map || version !== this.pollVersion) return;
 
         if (this.rpMap !== null) {
             if (this.rpMap.isJpgImageChanged(map)) {
@@ -663,10 +675,14 @@ export class RustPlusInstance {
         }
         const mapPath = await this.rpMap.writeImage();
 
+        if (version !== this.pollVersion) return;
         await discordMessages.sendInformationChannelMapMessage(dm, this, mapPath);
 
+        if (version !== this.pollVersion) return;
         await this.setupSmartDevices();
-        this.startServerPollingHandler();
+        if (version !== this.pollVersion) return;
+        const fresh = Date.now() - requestedAt < this.serverPollingHandlerIntervalSeconds * 1000;
+        this.startServerPollingHandler(fresh ? info : undefined);
     }
 
     public async setupSmartDevices() {
@@ -687,9 +703,11 @@ export class RustPlusInstance {
         const gInstance = gim.getGuildInstance(this.guildId) as GuildInstance;
         const settingData = gInstance.eventNotificationSettings[setting];
 
+        const session = this.sessionId;
         if (settingData.discord) {
             await discordMessages.sendEventNotificationMessage(dm, this.guildId, this.serverId, setting, text);
         }
+        if (session !== this.sessionId) return;
         if (settingData.inGame) {
             this.inGameTeamChatQueueMessage(text);
         }

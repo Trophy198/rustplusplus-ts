@@ -104,10 +104,26 @@ test('two credentials receive only their subscriptions through replacement, remo
     await tick();
     assert.deepEqual(sent, [['channel0', 'A'], ['channel1', 'B']]);
 
+    // Exercise the receiver's own retry after losing A's TLS stream.
+    sockets.delete('1000000000');
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    first.emit('close');
+    t.mock.timers.tick(2000);
+    t.mock.timers.reset();
+    const retried = await connected('1000000000');
+    assert.notEqual(retried, first);
+    assert.equal(first.eventNames().length, 0);
+    assert.equal(second.listenerCount('data'), 1);
+    assert.equal(retried.listenerCount('data'), 1);
+    notify(retried, 'retried', 'reconnected A');
+    await tick();
+    assert.deepEqual(sent.pop(), ['channel0', 'reconnected A']);
+
     credentials[accounts[0]].gcm = { androidId: '1000000002', securityToken: 'token2' };
     manager.startListener(accounts[0]);
     const replacement = await connected('1000000002');
     assert.ok(first.destroyed);
+    assert.equal(retried.eventNames().length, 0);
     notify(first, 'old', 'stale');
     notify(second, 'still-B', 'B active');
     notify(replacement, 'new-A', 'A replaced');
@@ -117,6 +133,7 @@ test('two credentials receive only their subscriptions through replacement, remo
     let finish;
     waitForCheckIn = new Promise(resolve => { finish = resolve; });
     const checking = new Promise(resolve => { entered = resolve; });
+    credentials[accounts[0]].gcm = { androidId: '1000000003', securityToken: 'token3' };
     manager.startListener(accounts[0]);
     await checking;
     manager.stopListener(accounts[0]);
@@ -127,6 +144,7 @@ test('two credentials receive only their subscriptions through replacement, remo
     await tick();
     assert.deepEqual(sent.slice(4), [['channel1', 'only B']]);
     assert.equal(sockets.get('1000000002'), replacement);
+    assert.equal(sockets.has('1000000003'), false);
     assert.equal(replacement.destroyed, true);
     assert.equal(manager.isListenerActive(accounts[0]), false);
     assert.equal(manager.isListenerActive(accounts[1]), true);

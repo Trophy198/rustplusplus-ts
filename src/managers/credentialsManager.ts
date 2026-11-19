@@ -69,6 +69,7 @@ export type DiscordUserIdToSteamIdsMap = {
 export class CredentialsManager {
     private credentialFilesPath: string;
     private credentialsMap: CredentialsMap;
+    private readonly notifying = new WeakSet<Credentials>();
     private expirationTimeoutIds: Map<types.SteamId, NodeJS.Timeout>;
 
     constructor(credentialFilesPath: string) {
@@ -190,14 +191,19 @@ export class CredentialsManager {
         const credentials = this.getCredentials(steamId);
         if (credentials === null) return;
 
-        const currentTimestamp = Math.floor(Date.now() / 1000);
-        if (credentials.expireDate < currentTimestamp && !credentials.expirationNotified) {
+        if (credentials.expirationNotified || this.notifying.has(credentials)) return;
+        this.notifying.add(credentials);
+        try {
             await sendCredentialsExpiredMessage(dm, steamId);
-            credentials.expirationNotified = true;
-            this.updateCredentials(steamId);
+            if (this.getCredentials(steamId) === credentials) {
+                credentials.expirationNotified = true;
+                this.updateCredentials(steamId);
+            }
+        } catch (error) {
+            log.warn(`Could not send credentials expiration notification for ${steamId}: ${error}`);
+        } finally {
+            this.notifying.delete(credentials);
         }
-
-        this.cancelExpireTimeout(steamId);
     }
 
     public getCredentialSteamIds(): types.SteamId[] {
@@ -208,7 +214,7 @@ export class CredentialsManager {
         const steamIds = this.getCredentialSteamIds();
         const map: DiscordUserIdToSteamIdsMap = {};
         for (const steamId of steamIds) {
-            const credentials = this.getCredentialsDeepCopy(steamId) as Credentials;
+            const credentials = this.credentialsMap[steamId];
             if (Object.hasOwn(map, credentials.discordUserId)) {
                 map[credentials.discordUserId].push(steamId);
             }
@@ -285,26 +291,20 @@ export class CredentialsManager {
     }
 
     public scheduleExpireTimeout(steamId: types.SteamId, dm: DiscordManager) {
-        if (this.expirationTimeoutIds.has(steamId)) {
-            /* Ensure no duplicate timeouts exist. */
-            this.cancelExpireTimeout(steamId);
-        }
-
+        this.cancelExpireTimeout(steamId);
         const credentials = this.getCredentials(steamId);
-        if (credentials === null) return;
-
-        const currentTimestamp = Math.floor(Date.now() / 1000);
-        const timeoutBufferMs = 5000; /* 5 seconds buffer to ensure the timeout triggers after expiration. */
-        const timeoutMs = ((credentials.expireDate - currentTimestamp) * 1000) + timeoutBufferMs;
-
+        if (!credentials || credentials.expirationNotified) return;
+        const timeoutMs = credentials.expireDate * 1000 + 5000 - Date.now();
         if (timeoutMs <= 0) {
-            this.handleExpiredCredentials(steamId, dm);
+            void this.handleExpiredCredentials(steamId, dm);
             return;
         }
 
+        // Node clamps delays above the signed 32-bit limit to one millisecond.
         const timeoutId = setTimeout(() => {
-            this.handleExpiredCredentials(steamId, dm);
-        }, timeoutMs);
+            this.expirationTimeoutIds.delete(steamId);
+            this.scheduleExpireTimeout(steamId, dm);
+        }, Math.min(timeoutMs, 2147483647));
 
         this.expirationTimeoutIds.set(steamId, timeoutId);
         log.info(`Credentials for ${steamId} will expire in ${timeoutMs / 1000} seconds.`);

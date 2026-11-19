@@ -191,6 +191,17 @@ export class RustPlusMapMarkers {
      * Update methods
      */
 
+    public stopTimers() {
+        for (const timers of [this.cargoShipEgressTimeoutIds, this.cargoShipEgressAfterHarbor1TimeoutIds,
+            this.cargoShipEgressAfterHarbor2TimeoutIds]) {
+            for (const timer of Object.values(timers)) timer.stop();
+        }
+        for (const timer of Object.values(this.cargoShipLockedCrateSpawnIntervalIds)) clearInterval(timer);
+        for (const timer of Object.values(this.cargoShipUndockingNotificationTimeoutIds)) clearTimeout(timer);
+        for (const timer of Object.values(this.travellingVendorLeavingNotificationTimeoutIds)) clearTimeout(timer);
+        for (const crate of Object.values(this.oilRigLockedCrateUnlockedMetaData)) clearTimeout(crate.timeoutId);
+    }
+
     public updateMapMarkers(appMapMarkers: rp.AppMapMarkers) {
         this.updateUndefineds(appMapMarkers);
         this.updatePlayers(appMapMarkers);

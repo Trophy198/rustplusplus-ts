@@ -29,7 +29,7 @@ import { GuildInstance } from '../managers/guildInstanceManager';
 import * as constants from '../utils/constants';
 import { getPos, getPosString } from '../utils/map';
 
-export async function handler(rpInstance: RustPlusInstance, teamInfo: rp.AppTeamInfo) {
+export async function handler(rpInstance: RustPlusInstance, teamInfo: rp.AppTeamInfo, isCurrent: () => boolean) {
     const fn = '[rustPlusTeamInfoHandler: handler]';
     const logParam = {
         guildId: rpInstance.guildId,
@@ -54,6 +54,7 @@ export async function handler(rpInstance: RustPlusInstance, teamInfo: rp.AppTeam
         const str = lm.getIntl(language, 'memberLeftTheTeam', { name: member.appTeamInfoMember.name });
         await discordMessages.sendActivityNotificationMessage(dm, rpInstance.guildId, rpInstance.serverId, str,
             constants.COLOR_INACTIVE, leftMember.steamId);
+        if (!isCurrent()) return;
         if (gInstance.generalSettings.inGameChatNotifyConnection) {
             rpInstance.inGameTeamChatQueueMessage(str);
         }
@@ -65,6 +66,7 @@ export async function handler(rpInstance: RustPlusInstance, teamInfo: rp.AppTeam
         const str = lm.getIntl(language, 'memberJoinedTheTeam', { name: newMember.name });
         await discordMessages.sendActivityNotificationMessage(dm, rpInstance.guildId, rpInstance.serverId, str,
             constants.COLOR_ACTIVE, newMember.steamId);
+        if (!isCurrent()) return;
         if (gInstance.generalSettings.inGameChatNotifyConnection) {
             rpInstance.inGameTeamChatQueueMessage(str);
         }
@@ -88,6 +90,7 @@ export async function handler(rpInstance: RustPlusInstance, teamInfo: rp.AppTeam
             });
             await discordMessages.sendActivityNotificationMessage(dm, rpInstance.guildId, rpInstance.serverId, str,
                 constants.COLOR_INACTIVE, updatedMemberInfo.steamId);
+            if (!isCurrent()) return;
             if (gInstance.generalSettings.inGameChatNotifyDeath) {
                 rpInstance.inGameTeamChatQueueMessage(str);
             }
@@ -105,6 +108,7 @@ export async function handler(rpInstance: RustPlusInstance, teamInfo: rp.AppTeam
             });
             await discordMessages.sendActivityNotificationMessage(dm, rpInstance.guildId, rpInstance.serverId, str,
                 constants.COLOR_AFK, updatedMemberInfo.steamId);
+            if (!isCurrent()) return;
             if (gInstance.generalSettings.inGameChatNotifyAfk) {
                 rpInstance.inGameTeamChatQueueMessage(str);
             }
@@ -119,6 +123,7 @@ export async function handler(rpInstance: RustPlusInstance, teamInfo: rp.AppTeam
             });
             await discordMessages.sendActivityNotificationMessage(dm, rpInstance.guildId, rpInstance.serverId, str,
                 constants.COLOR_ACTIVE, updatedMemberInfo.steamId);
+            if (!isCurrent()) return;
             if (gInstance.generalSettings.inGameChatNotifyAfk) {
                 rpInstance.inGameTeamChatQueueMessage(str);
             }
@@ -129,6 +134,7 @@ export async function handler(rpInstance: RustPlusInstance, teamInfo: rp.AppTeam
             const str = lm.getIntl(language, 'memberJustConnected', { name: updatedMemberInfo.name });
             await discordMessages.sendActivityNotificationMessage(dm, rpInstance.guildId, rpInstance.serverId, str,
                 constants.COLOR_ACTIVE, updatedMemberInfo.steamId);
+            if (!isCurrent()) return;
             if (gInstance.generalSettings.inGameChatNotifyConnection) {
                 rpInstance.inGameTeamChatQueueMessage(str);
             }
@@ -140,6 +146,7 @@ export async function handler(rpInstance: RustPlusInstance, teamInfo: rp.AppTeam
             const str = lm.getIntl(language, 'memberJustDisconnected', { name: updatedMemberInfo.name });
             await discordMessages.sendActivityNotificationMessage(dm, rpInstance.guildId, rpInstance.serverId, str,
                 constants.COLOR_INACTIVE, updatedMemberInfo.steamId);
+            if (!isCurrent()) return;
             if (gInstance.generalSettings.inGameChatNotifyConnection) {
                 rpInstance.inGameTeamChatQueueMessage(str);
             }

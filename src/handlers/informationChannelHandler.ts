@@ -23,17 +23,19 @@ import { RustPlusInstance } from "../managers/rustPlusManager";
 import * as discordMessages from '../discordUtils/discordMessages';
 import { GuildInstance } from '../managers/guildInstanceManager';
 
-export async function handler(rpInstance: RustPlusInstance) {
+export async function handler(rpInstance: RustPlusInstance, isCurrent: () => boolean) {
     const gInstance = gim.getGuildInstance(rpInstance.guildId) as GuildInstance;
     if (gInstance.serverToView !== rpInstance.serverId) return;
 
     if (rpInstance.informationChannelCounter === 0) {
         // map
         await discordMessages.sendInformationChannelServerEventMessage(dm, rpInstance);
+        if (!isCurrent()) return;
         await discordMessages.sendInformationChannelTeamMessage(dm, rpInstance);
         // battlemetricsPlayers
     }
 
+    if (!isCurrent()) return;
     rpInstance.informationChannelCounter++;
     // TODO! Make this working better together with the rustplus polling interval
     if (rpInstance.informationChannelCounter >= 4) {

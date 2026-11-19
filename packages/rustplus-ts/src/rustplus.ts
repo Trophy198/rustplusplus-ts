@@ -160,7 +160,8 @@ export enum ConsumeTokensError {
     Unknown = 1,
     NotEnoughConnectionTokens = 2,
     NotEnoughPlayerIdTokens = 3,
-    WaitReplenishTimeout = 4
+    WaitReplenishTimeout = 4,
+    Disconnected = 5
 }
 
 function getAddress(useFacepunchProxy: boolean, ip: string, port: string): string {
@@ -236,7 +237,8 @@ export class RustPlus extends EventEmitter {
     private logger: Logger | null;
 
     private seq: number;
-    private seqCallbacks: CallbackFunction[];
+    private readonly seqCallbacks = new Map<number, { response: CallbackFunction; disconnect?: () => void }>();
+    private readonly tokenWaiters = new Set<() => void>();
 
     private ws: WebSocket | null;
     private relaySteamId?: string;
@@ -267,7 +269,6 @@ export class RustPlus extends EventEmitter {
         this.logger = logger;
 
         this.seq = 0;
-        this.seqCallbacks = [];
 
         this.ws = null;
 
@@ -286,6 +287,7 @@ export class RustPlus extends EventEmitter {
         this.replenishConnectionTokens();
         this.replenishPlayerIdTokens();
         this.replenishServerPairingTokens();
+        this.wakeTokenWaiters();
     }
 
     /**
@@ -306,12 +308,9 @@ export class RustPlus extends EventEmitter {
     private replenishPlayerIdTokens() {
         /* Replenish tokens for requests per player id. */
         for (const playerId in this.tokens.playerId) {
-            if (this.tokens.playerId[playerId] < RustPlus.MAX_REQUESTS_PER_PLAYER_ID) {
-                this.tokens.playerId[playerId] = Math.min(
-                    this.tokens.playerId[playerId] + RustPlus.REQUESTS_PER_PLAYER_ID_REPLENISH_RATE,
-                    RustPlus.MAX_REQUESTS_PER_PLAYER_ID
-                );
-            }
+            const replenished = this.tokens.playerId[playerId] + RustPlus.REQUESTS_PER_PLAYER_ID_REPLENISH_RATE;
+            if (replenished >= RustPlus.MAX_REQUESTS_PER_PLAYER_ID) delete this.tokens.playerId[playerId];
+            else this.tokens.playerId[playerId] = replenished;
         }
     }
 
@@ -339,23 +338,18 @@ export class RustPlus extends EventEmitter {
      */
     private async consumeTokens(playerId: string, tokens: number, waitForReplenish: boolean,
         timeoutMs: number = 10000): Promise<ConsumeTokensError> {
-        /* Check if playerId exists, if not, initialize with max tokens. */
-        if (!(playerId in this.tokens.playerId)) {
-            this.tokens.playerId[playerId] = RustPlus.MAX_REQUESTS_PER_PLAYER_ID;
-        }
-
+        const socket = this.ws;
         const startTime = Date.now();
 
         /* Function to check whether there are enough tokens available from connection and playerId. */
-        const hasEnoughTokens = () => {
-            return this.tokens.connection >= tokens && this.tokens.playerId[playerId] >= tokens;
-        };
+        const available = () => this.tokens.playerId[playerId] ?? RustPlus.MAX_REQUESTS_PER_PLAYER_ID;
+        const hasEnoughTokens = () => this.tokens.connection >= tokens && available() >= tokens;
 
         if (!waitForReplenish && !hasEnoughTokens()) {
-            if (this.tokens.connection >= tokens) {
+            if (this.tokens.connection < tokens) {
                 return ConsumeTokensError.NotEnoughConnectionTokens;
             }
-            else if (this.tokens.playerId[playerId] >= tokens) {
+            else if (available() < tokens) {
                 return ConsumeTokensError.NotEnoughPlayerIdTokens;
             }
             else {
@@ -371,24 +365,20 @@ export class RustPlus extends EventEmitter {
                 return ConsumeTokensError.WaitReplenishTimeout;
             }
 
-            await this.delay(100);
+            if (!socket || socket !== this.ws) return ConsumeTokensError.Disconnected;
+            await new Promise<void>(resolve => this.tokenWaiters.add(resolve));
+            if (socket !== this.ws) return ConsumeTokensError.Disconnected;
         }
 
         this.tokens.connection -= tokens;
-        this.tokens.playerId[playerId] -= tokens;
+        this.tokens.playerId[playerId] = available() - tokens;
 
         return ConsumeTokensError.NoError;
     }
 
-    /**
-     * Delays the execution of the next operation by a specified number of milliseconds.
-     *
-     * @param {number} ms - The amount of time, in milliseconds, to delay the execution.
-     *
-     * @returns {Promise<void>} A promise that resolves after the specified delay.
-     */
-    private delay(ms: number): Promise<void> {
-        return new Promise((resolve) => setTimeout(resolve, ms));
+    private wakeTokenWaiters() {
+        for (const wake of this.tokenWaiters) wake();
+        this.tokenWaiters.clear();
     }
 
     /**
@@ -404,7 +394,7 @@ export class RustPlus extends EventEmitter {
         let nextSeq = this.seq + 1;
 
         /* Find the next available sequence number. */
-        while (this.seqCallbacks[nextSeq]) {
+        while (this.seqCallbacks.has(nextSeq)) {
             nextSeq++;
         }
 
@@ -435,7 +425,10 @@ export class RustPlus extends EventEmitter {
         }
 
         this.ws.on('open', () => { this.emit('connected'); });
-        this.ws.on('close', () => { this.emit('disconnected'); });
+        this.ws.on('close', () => {
+            void this.disconnect();
+            this.emit('disconnected');
+        });
         this.ws.on('error', (e) => { this.emit('error', EmitErrorType.WebSocket, e); });
         this.ws.on('message', (data: WebSocket.RawData, isBinary: boolean) => {
             if (!isBinary) return;
@@ -449,19 +442,17 @@ export class RustPlus extends EventEmitter {
                     Array.isArray(data) ? Buffer.concat(data) : new Uint8Array(data);
                 const appMessage = rpi.AppMessage.fromBinary(bytes);
 
-                if (appMessage.response && this.seqCallbacks[appMessage.response.seq]) {
-                    const callback: CallbackFunction = this.seqCallbacks[appMessage.response.seq];
+                const pending = appMessage.response && this.seqCallbacks.get(appMessage.response.seq);
+                if (pending && appMessage.response) {
+                    this.seqCallbacks.delete(appMessage.response.seq);
 
                     try {
-                        callback(appMessage);
+                        pending.response(appMessage);
                         handled = true;
                     }
                     catch (callbackError) {
                         const errorMessage = callbackError instanceof Error ? callbackError.message : 'Unknown error';
                         this.emit('error', EmitErrorType.Callback, new Error(`ERROR on.message: ${errorMessage}`));
-                    }
-                    finally {
-                        delete this.seqCallbacks[appMessage.response.seq];
                     }
                 }
 
@@ -486,11 +477,20 @@ export class RustPlus extends EventEmitter {
     async disconnect(): Promise<boolean> {
         if (this.replenishInterval) {
             clearInterval(this.replenishInterval);
+            this.replenishInterval = null;
         }
+        for (const pending of this.seqCallbacks.values()) pending.disconnect?.();
+        this.seqCallbacks.clear();
+        this.wakeTokenWaiters();
 
         if (this.ws !== null) {
             this.ws.removeAllListeners();
-            this.ws.on('error', () => { /* Closing socket */ });
+            const socket = this.ws;
+            if (socket.readyState !== WebSocket.CLOSED) {
+                const ignoreClosingError = () => { /* ws can emit an error when terminating during handshake. */ };
+                socket.once('error', ignoreClosingError);
+                socket.once('close', () => socket.off('error', ignoreClosingError));
+            }
 
             try {
                 this.ws.terminate();
@@ -536,6 +536,11 @@ export class RustPlus extends EventEmitter {
      */
     sendRequest(data: RequestBody, playerId: string,
         playerToken: number, callback: CallbackFunction, seq: number | null = null): Error | void {
+        return this.writeRequest(data, playerId, playerToken, callback, seq);
+    }
+
+    private writeRequest(data: RequestBody, playerId: string, playerToken: number, callback: CallbackFunction,
+        seq: number | null, onDisconnect?: () => void): Error | void {
         /* Is the WebSocket present? */
         if (this.ws === null || this.ws.readyState !== WebSocket.OPEN) {
             return new Error('ERROR sendRequest: WebSocket is not open.');
@@ -548,8 +553,7 @@ export class RustPlus extends EventEmitter {
             seq = this.getNextSeq();
         }
 
-        /* Save callback function. */
-        this.seqCallbacks[seq] = callback;
+        if (this.seqCallbacks.has(seq)) return new Error('Request sequence is already in use.');
 
         /* Create AppRequest object. */
         let appRequestData: rpi.AppRequest;
@@ -572,7 +576,6 @@ export class RustPlus extends EventEmitter {
         }
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            delete this.seqCallbacks[seq];
             return new Error(`ERROR sendRequest: ${errorMessage}`);
         }
 
@@ -583,17 +586,17 @@ export class RustPlus extends EventEmitter {
         }
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            delete this.seqCallbacks[seq];
             return new Error(`ERROR sendRequest AppRequest.toBinary: ${errorMessage}`);
         }
 
         /* Send AppRequest packet to the rust server. */
         try {
+            this.seqCallbacks.set(seq, { response: callback, disconnect: onDisconnect });
             this.ws.send(appRequest);
         }
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            delete this.seqCallbacks[seq];
+            this.seqCallbacks.delete(seq);
             return new Error(`ERROR sendRequest ws.send: ${errorMessage}`);
         }
 
@@ -624,11 +627,11 @@ export class RustPlus extends EventEmitter {
             const seq = this.getNextSeq();
 
             const timeout = setTimeout(() => {
-                delete this.seqCallbacks[seq];
+                this.seqCallbacks.delete(seq);
                 resolve(new Error('Timeout reached while waiting for response.'));
             }, timeoutMs);
 
-            const result = this.sendRequest(data, playerId, playerToken, (appMessage: rpi.AppMessage) => {
+            const result = this.writeRequest(data, playerId, playerToken, (appMessage: rpi.AppMessage) => {
                 clearTimeout(timeout);
 
                 try {
@@ -642,18 +645,16 @@ export class RustPlus extends EventEmitter {
 
                     const response: rpi.AppResponse = appMessage.response;
 
-                    if (response.error) {
-                        resolve(response);
-                    }
-                    else {
-                        resolve(response);
-                    }
+                    resolve(response);
                 }
                 catch (error) {
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
                     resolve(new Error(`ERROR sendRequestAsync: ${errorMessage}`));
                 }
-            }, seq);
+            }, seq, () => {
+                clearTimeout(timeout);
+                resolve(new Error('Rust+ connection closed while waiting for response.'));
+            });
 
             if (result instanceof Error) {
                 clearTimeout(timeout);

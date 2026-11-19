@@ -25,7 +25,6 @@ import {
     rustPlusManager as rpm
 } from '../../index';
 import { DiscordManager } from '../managers/discordManager';
-import { Credentials } from '../managers/credentialsManager';
 import * as types from '../utils/types';
 import { GuildInstance } from '../managers/guildInstanceManager';
 
@@ -54,11 +53,9 @@ export async function execute(dm: DiscordManager) {
     }
 
     /* Check if credentials have no associated guilds */
-    const credentialSteamIds = cm.getCredentialSteamIds();
-    for (const steamId of credentialSteamIds) {
-        const credentials = cm.getCredentials(steamId) as Credentials;
-
-        const associatedGuilds = await dm.getGuildIdsForUser(credentials.discordUserId);
+    for (const [owner, registeredIds] of Object.entries(cm.getDiscordUserIdToSteamIdsMap())) {
+        const associatedGuilds = await dm.getGuildIdsForUser(owner);
+        const steamIds = registeredIds.filter(id => cm.getCredentials(id)?.discordUserId === owner);
         const notAssociatedGuilds = activeGuildIds.filter(guildId =>
             !associatedGuilds.includes(guildId));
 
@@ -67,13 +64,15 @@ export async function execute(dm: DiscordManager) {
             const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
 
             let changed = false;
-            for (const [serverId, steamIds] of Object.entries(gInstance.pairingDataMap)) {
-                if (steamIds[steamId]) {
-                    delete steamIds[steamId];
-                    changed = true;
+            for (const [serverId, pairings] of Object.entries(gInstance.pairingDataMap)) {
+                for (const steamId of steamIds) {
+                    if (pairings[steamId]) {
+                        delete pairings[steamId];
+                        changed = true;
+                    }
                 }
 
-                if (Object.keys(steamIds).length === 0) {
+                if (Object.keys(pairings).length === 0) {
                     delete gInstance.pairingDataMap[serverId];
                     changed = true;
                 }
@@ -83,13 +82,14 @@ export async function execute(dm: DiscordManager) {
         }
 
         /* If no longer associated with any guilds, stop fcm listener and remove credentials */
-        if (associatedGuilds.length === 0) {
-            flm.stopListener(steamId);
-            cm.deleteCredentials(steamId);
-            continue;
+        for (const steamId of steamIds) {
+            if (associatedGuilds.length === 0) {
+                flm.stopListener(steamId);
+                cm.deleteCredentials(steamId);
+            } else {
+                cm.scheduleExpireTimeout(steamId, dm);
+            }
         }
-
-        cm.scheduleExpireTimeout(steamId, dm);
     }
 
     /* Update requesterSteamId */
