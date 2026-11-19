@@ -81,12 +81,13 @@ test('real WebSocket handshake, binary requests, broadcasts and account binding'
 test('uint64 codec and validators agree for requests, broadcasts and camera entities', () => {
     const rp = require('rustplus-ts');
     for (const entityId of ['0', '4294967296', '9007199254740993', '18446744073709551615']) {
-        for (const [codec, validate] of [
+        for (const [codec, validate, fields] of [
             [rp.AppRequest, rp.isValidAppRequest],
             [rp.AppEntityChanged, rp.isValidAppEntityChanged],
-            [rp.AppCameraRays_Entity, rp.isValidAppCameraRays_Entity]
+            [rp.AppCameraRays_Entity, rp.isValidAppCameraRays_Entity,
+                { type: rp.AppCameraRays_EntityType.Tree, position: {}, rotation: {}, size: {} }]
         ]) {
-            const value = codec.create({ entityId });
+            const value = codec.create({ entityId, ...fields });
             const decoded = codec.fromBinary(codec.toBinary(value));
             assert.equal(decoded.entityId, entityId);
             assert.ok(validate(decoded), codec.typeName);

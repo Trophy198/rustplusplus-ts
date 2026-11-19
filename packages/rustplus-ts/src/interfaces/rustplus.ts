@@ -66,15 +66,15 @@ export interface Vector4 {
  */
 export interface Half3 {
     /**
-     * @generated from protobuf field: float x = 1
+     * @generated from protobuf field: uint32 x = 1
      */
     x: number;
     /**
-     * @generated from protobuf field: float y = 2
+     * @generated from protobuf field: uint32 y = 2
      */
     y: number;
     /**
-     * @generated from protobuf field: float z = 3
+     * @generated from protobuf field: uint32 z = 3
      */
     z: number;
 }
@@ -336,6 +336,89 @@ export interface ClanLog_Entry {
     arg4?: string;
 }
 /**
+ * @generated from protobuf message rustplus.ClanScoreEvents
+ */
+export interface ClanScoreEvents {
+    /**
+     * @generated from protobuf field: optional int64 clanId = 1
+     */
+    clanId?: string;
+    /**
+     * @generated from protobuf field: repeated rustplus.ClanScoreEvents.Entry scoreEvents = 2
+     */
+    scoreEvents: ClanScoreEvents_Entry[];
+}
+/**
+ * @generated from protobuf message rustplus.ClanScoreEvents.Entry
+ */
+export interface ClanScoreEvents_Entry {
+    /**
+     * @generated from protobuf field: optional int64 timestamp = 1
+     */
+    timestamp?: string;
+    /**
+     * @generated from protobuf field: optional int32 type = 2
+     */
+    type?: number;
+    /**
+     * @generated from protobuf field: optional int32 score = 3
+     */
+    score?: number;
+    /**
+     * @generated from protobuf field: optional int32 multiplier = 4
+     */
+    multiplier?: number;
+    /**
+     * @generated from protobuf field: optional uint64 steamId = 5
+     */
+    steamId?: string;
+    /**
+     * @generated from protobuf field: optional uint64 otherSteamId = 6
+     */
+    otherSteamId?: string;
+    /**
+     * @generated from protobuf field: optional int64 otherClanId = 7
+     */
+    otherClanId?: string;
+    /**
+     * @generated from protobuf field: optional string arg1 = 8
+     */
+    arg1?: string;
+    /**
+     * @generated from protobuf field: optional string arg2 = 9
+     */
+    arg2?: string;
+}
+/**
+ * @generated from protobuf message rustplus.ClanLeaderboard
+ */
+export interface ClanLeaderboard {
+    /**
+     * @generated from protobuf field: repeated rustplus.ClanLeaderboard.Entry entries = 1
+     */
+    entries: ClanLeaderboard_Entry[];
+}
+/**
+ * @generated from protobuf message rustplus.ClanLeaderboard.Entry
+ */
+export interface ClanLeaderboard_Entry {
+    /**
+     * @generated from protobuf field: optional int64 clanId = 1
+     */
+    clanId?: string;
+    /**
+     * The official decoder requires this tag even for an empty name.
+     * Track presence in proto3 so the validator can reject a missing name.
+     *
+     * @generated from protobuf field: optional string name = 2
+     */
+    name?: string;
+    /**
+     * @generated from protobuf field: optional int64 score = 3
+     */
+    score?: string;
+}
+/**
  * @generated from protobuf message rustplus.ClanInvitations
  */
 export interface ClanInvitations {
@@ -461,6 +544,10 @@ export interface AppRequest {
      * @generated from protobuf field: optional rustplus.AppCameraInput cameraInput = 32
      */
     cameraInput?: AppCameraInput;
+    /**
+     * @generated from protobuf field: optional rustplus.AppTeamKick kickFromTeam = 33
+     */
+    kickFromTeam?: AppTeamKick;
 }
 /**
  * @generated from protobuf message rustplus.AppMessage
@@ -600,6 +687,15 @@ export interface AppPromoteToLeader {
      * @generated from protobuf field: uint64 steamId = 1
      */
     steamId: string;
+}
+/**
+ * @generated from protobuf message rustplus.AppTeamKick
+ */
+export interface AppTeamKick {
+    /**
+     * @generated from protobuf field: optional uint64 steamId = 1
+     */
+    steamId?: string;
 }
 /**
  * @generated from protobuf message rustplus.AppGetNexusAuth
@@ -772,6 +868,10 @@ export interface AppMap_Monument {
      * @generated from protobuf field: float y = 3
      */
     y: number;
+    /**
+     * @generated from protobuf field: optional bool isCustomName = 4
+     */
+    isCustomName?: boolean;
 }
 /**
  * @generated from protobuf message rustplus.AppEntityInfo
@@ -891,9 +991,9 @@ export interface AppTeamInfo_Member {
  */
 export interface AppTeamInfo_Note {
     /**
-     * @generated from protobuf field: rustplus.AppTeamInfo.Note.Type type = 2
+     * @generated from protobuf field: int32 type = 2
      */
-    type: AppTeamInfo_Note_Type;
+    type: number;
     /**
      * @generated from protobuf field: float x = 3
      */
@@ -903,112 +1003,17 @@ export interface AppTeamInfo_Note {
      */
     y: number;
     /**
-     * @generated from protobuf field: rustplus.AppTeamInfo.Note.Icon icon = 5
+     * @generated from protobuf field: int32 icon = 5
      */
-    icon: AppTeamInfo_Note_Icon;
+    icon: number;
     /**
-     * @generated from protobuf field: rustplus.AppTeamInfo.Note.ColourIndex colourIndex = 6
+     * @generated from protobuf field: int32 colourIndex = 6
      */
-    colourIndex: AppTeamInfo_Note_ColourIndex;
+    colourIndex: number;
     /**
      * @generated from protobuf field: optional string label = 7
      */
     label?: string;
-}
-/**
- * @generated from protobuf enum rustplus.AppTeamInfo.Note.Type
- */
-export enum AppTeamInfo_Note_Type {
-    /**
-     * @generated from protobuf enum value: Death = 0;
-     */
-    Death = 0,
-    /**
-     * @generated from protobuf enum value: PointOfInterest = 1;
-     */
-    PointOfInterest = 1
-}
-/**
- * @generated from protobuf enum rustplus.AppTeamInfo.Note.Icon
- */
-export enum AppTeamInfo_Note_Icon {
-    /**
-     * @generated from protobuf enum value: Pin = 0;
-     */
-    Pin = 0,
-    /**
-     * @generated from protobuf enum value: Dollar = 1;
-     */
-    Dollar = 1,
-    /**
-     * @generated from protobuf enum value: Home = 2;
-     */
-    Home = 2,
-    /**
-     * @generated from protobuf enum value: Parachute = 3;
-     */
-    Parachute = 3,
-    /**
-     * @generated from protobuf enum value: Scope = 4;
-     */
-    Scope = 4,
-    /**
-     * @generated from protobuf enum value: Shield = 5;
-     */
-    Shield = 5,
-    /**
-     * @generated from protobuf enum value: Skull = 6;
-     */
-    Skull = 6,
-    /**
-     * @generated from protobuf enum value: Sleep = 7;
-     */
-    Sleep = 7,
-    /**
-     * @generated from protobuf enum value: Zzz = 8;
-     */
-    Zzz = 8,
-    /**
-     * @generated from protobuf enum value: Gun = 9;
-     */
-    Gun = 9,
-    /**
-     * @generated from protobuf enum value: Rock = 10;
-     */
-    Rock = 10,
-    /**
-     * @generated from protobuf enum value: Loot = 11;
-     */
-    Loot = 11
-}
-/**
- * @generated from protobuf enum rustplus.AppTeamInfo.Note.ColourIndex
- */
-export enum AppTeamInfo_Note_ColourIndex {
-    /**
-     * @generated from protobuf enum value: Yellow = 0;
-     */
-    Yellow = 0,
-    /**
-     * @generated from protobuf enum value: Blue = 1;
-     */
-    Blue = 1,
-    /**
-     * @generated from protobuf enum value: Green = 2;
-     */
-    Green = 2,
-    /**
-     * @generated from protobuf enum value: Red = 3;
-     */
-    Red = 3,
-    /**
-     * @generated from protobuf enum value: Purple = 4;
-     */
-    Purple = 4,
-    /**
-     * @generated from protobuf enum value: Cyan = 5;
-     */
-    Cyan = 5
 }
 /**
  * @generated from protobuf message rustplus.AppTeamMessage
@@ -1145,6 +1150,12 @@ export interface AppMarker_SellOrder {
      * @generated from protobuf field: float priceMultiplier = 10
      */
     priceMultiplier: number;
+    /**
+     * The official default is 1. An explicitly sent zero has a different meaning.
+     *
+     * @generated from protobuf field: optional float receivedQuantityMultiplier = 11
+     */
+    receivedQuantityMultiplier?: number;
 }
 /**
  * @generated from protobuf message rustplus.AppMapMarkers
@@ -1339,6 +1350,18 @@ export interface AppCameraRays {
      * @generated from protobuf field: float timeOfDay = 6
      */
     timeOfDay: number;
+    /**
+     * @generated from protobuf field: optional rustplus.Vector3 cameraPosition = 7
+     */
+    cameraPosition?: Vector3;
+    /**
+     * @generated from protobuf field: optional rustplus.Vector3 cameraRotation = 8
+     */
+    cameraRotation?: Vector3;
+    /**
+     * @generated from protobuf field: optional rustplus.Vector3 sampleRotation = 9
+     */
+    sampleRotation?: Vector3;
 }
 /**
  * @generated from protobuf message rustplus.AppCameraRays.Entity
@@ -1374,6 +1397,8 @@ export interface AppCameraRays_Entity {
  */
 export enum AppCameraRays_EntityType {
     /**
+     * Proto3 zero placeholder. The official verifier accepts Tree and Player.
+     *
      * @generated from protobuf enum value: Reserved = 0;
      */
     Reserved = 0,
@@ -1391,6 +1416,8 @@ export enum AppCameraRays_EntityType {
  */
 export enum AppEntityType {
     /**
+     * Proto3 zero placeholder. The official verifier accepts values 1 through 3.
+     *
      * @generated from protobuf enum value: Reserved = 0;
      */
     Reserved = 0,
@@ -1645,9 +1672,9 @@ export const Vector4 = new Vector4$Type();
 class Half3$Type extends MessageType<Half3> {
     constructor() {
         super("rustplus.Half3", [
-            { no: 1, name: "x", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
-            { no: 2, name: "y", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
-            { no: 3, name: "z", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
+            { no: 1, name: "x", kind: "scalar", T: 13 /*ScalarType.UINT32*/ },
+            { no: 2, name: "y", kind: "scalar", T: 13 /*ScalarType.UINT32*/ },
+            { no: 3, name: "z", kind: "scalar", T: 13 /*ScalarType.UINT32*/ }
         ]);
     }
     create(value?: PartialMessage<Half3>): Half3 {
@@ -1664,14 +1691,14 @@ class Half3$Type extends MessageType<Half3> {
         while (reader.pos < end) {
             let [fieldNo, wireType] = reader.tag();
             switch (fieldNo) {
-                case /* float x */ 1:
-                    message.x = reader.float();
+                case /* uint32 x */ 1:
+                    message.x = reader.uint32();
                     break;
-                case /* float y */ 2:
-                    message.y = reader.float();
+                case /* uint32 y */ 2:
+                    message.y = reader.uint32();
                     break;
-                case /* float z */ 3:
-                    message.z = reader.float();
+                case /* uint32 z */ 3:
+                    message.z = reader.uint32();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -1685,15 +1712,15 @@ class Half3$Type extends MessageType<Half3> {
         return message;
     }
     internalBinaryWrite(message: Half3, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
-        /* float x = 1; */
+        /* uint32 x = 1; */
         if (message.x !== 0)
-            writer.tag(1, WireType.Bit32).float(message.x);
-        /* float y = 2; */
+            writer.tag(1, WireType.Varint).uint32(message.x);
+        /* uint32 y = 2; */
         if (message.y !== 0)
-            writer.tag(2, WireType.Bit32).float(message.y);
-        /* float z = 3; */
+            writer.tag(2, WireType.Varint).uint32(message.y);
+        /* uint32 z = 3; */
         if (message.z !== 0)
-            writer.tag(3, WireType.Bit32).float(message.z);
+            writer.tag(3, WireType.Varint).uint32(message.z);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -2469,6 +2496,269 @@ class ClanLog_Entry$Type extends MessageType<ClanLog_Entry> {
  */
 export const ClanLog_Entry = new ClanLog_Entry$Type();
 // @generated message type with reflection information, may provide speed optimized methods
+class ClanScoreEvents$Type extends MessageType<ClanScoreEvents> {
+    constructor() {
+        super("rustplus.ClanScoreEvents", [
+            { no: 1, name: "clanId", kind: "scalar", opt: true, T: 3 /*ScalarType.INT64*/ },
+            { no: 2, name: "scoreEvents", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => ClanScoreEvents_Entry }
+        ]);
+    }
+    create(value?: PartialMessage<ClanScoreEvents>): ClanScoreEvents {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.scoreEvents = [];
+        if (value !== undefined)
+            reflectionMergePartial<ClanScoreEvents>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ClanScoreEvents): ClanScoreEvents {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* optional int64 clanId */ 1:
+                    message.clanId = reader.int64().toString();
+                    break;
+                case /* repeated rustplus.ClanScoreEvents.Entry scoreEvents */ 2:
+                    message.scoreEvents.push(ClanScoreEvents_Entry.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ClanScoreEvents, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* optional int64 clanId = 1; */
+        if (message.clanId !== undefined)
+            writer.tag(1, WireType.Varint).int64(message.clanId);
+        /* repeated rustplus.ClanScoreEvents.Entry scoreEvents = 2; */
+        for (let i = 0; i < message.scoreEvents.length; i++)
+            ClanScoreEvents_Entry.internalBinaryWrite(message.scoreEvents[i], writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message rustplus.ClanScoreEvents
+ */
+export const ClanScoreEvents = new ClanScoreEvents$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ClanScoreEvents_Entry$Type extends MessageType<ClanScoreEvents_Entry> {
+    constructor() {
+        super("rustplus.ClanScoreEvents.Entry", [
+            { no: 1, name: "timestamp", kind: "scalar", opt: true, T: 3 /*ScalarType.INT64*/ },
+            { no: 2, name: "type", kind: "scalar", opt: true, T: 5 /*ScalarType.INT32*/ },
+            { no: 3, name: "score", kind: "scalar", opt: true, T: 5 /*ScalarType.INT32*/ },
+            { no: 4, name: "multiplier", kind: "scalar", opt: true, T: 5 /*ScalarType.INT32*/ },
+            { no: 5, name: "steamId", kind: "scalar", opt: true, T: 4 /*ScalarType.UINT64*/ },
+            { no: 6, name: "otherSteamId", kind: "scalar", opt: true, T: 4 /*ScalarType.UINT64*/ },
+            { no: 7, name: "otherClanId", kind: "scalar", opt: true, T: 3 /*ScalarType.INT64*/ },
+            { no: 8, name: "arg1", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 9, name: "arg2", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ClanScoreEvents_Entry>): ClanScoreEvents_Entry {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        if (value !== undefined)
+            reflectionMergePartial<ClanScoreEvents_Entry>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ClanScoreEvents_Entry): ClanScoreEvents_Entry {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* optional int64 timestamp */ 1:
+                    message.timestamp = reader.int64().toString();
+                    break;
+                case /* optional int32 type */ 2:
+                    message.type = reader.int32();
+                    break;
+                case /* optional int32 score */ 3:
+                    message.score = reader.int32();
+                    break;
+                case /* optional int32 multiplier */ 4:
+                    message.multiplier = reader.int32();
+                    break;
+                case /* optional uint64 steamId */ 5:
+                    message.steamId = reader.uint64().toString();
+                    break;
+                case /* optional uint64 otherSteamId */ 6:
+                    message.otherSteamId = reader.uint64().toString();
+                    break;
+                case /* optional int64 otherClanId */ 7:
+                    message.otherClanId = reader.int64().toString();
+                    break;
+                case /* optional string arg1 */ 8:
+                    message.arg1 = reader.string();
+                    break;
+                case /* optional string arg2 */ 9:
+                    message.arg2 = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ClanScoreEvents_Entry, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* optional int64 timestamp = 1; */
+        if (message.timestamp !== undefined)
+            writer.tag(1, WireType.Varint).int64(message.timestamp);
+        /* optional int32 type = 2; */
+        if (message.type !== undefined)
+            writer.tag(2, WireType.Varint).int32(message.type);
+        /* optional int32 score = 3; */
+        if (message.score !== undefined)
+            writer.tag(3, WireType.Varint).int32(message.score);
+        /* optional int32 multiplier = 4; */
+        if (message.multiplier !== undefined)
+            writer.tag(4, WireType.Varint).int32(message.multiplier);
+        /* optional uint64 steamId = 5; */
+        if (message.steamId !== undefined)
+            writer.tag(5, WireType.Varint).uint64(message.steamId);
+        /* optional uint64 otherSteamId = 6; */
+        if (message.otherSteamId !== undefined)
+            writer.tag(6, WireType.Varint).uint64(message.otherSteamId);
+        /* optional int64 otherClanId = 7; */
+        if (message.otherClanId !== undefined)
+            writer.tag(7, WireType.Varint).int64(message.otherClanId);
+        /* optional string arg1 = 8; */
+        if (message.arg1 !== undefined)
+            writer.tag(8, WireType.LengthDelimited).string(message.arg1);
+        /* optional string arg2 = 9; */
+        if (message.arg2 !== undefined)
+            writer.tag(9, WireType.LengthDelimited).string(message.arg2);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message rustplus.ClanScoreEvents.Entry
+ */
+export const ClanScoreEvents_Entry = new ClanScoreEvents_Entry$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ClanLeaderboard$Type extends MessageType<ClanLeaderboard> {
+    constructor() {
+        super("rustplus.ClanLeaderboard", [
+            { no: 1, name: "entries", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => ClanLeaderboard_Entry }
+        ]);
+    }
+    create(value?: PartialMessage<ClanLeaderboard>): ClanLeaderboard {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.entries = [];
+        if (value !== undefined)
+            reflectionMergePartial<ClanLeaderboard>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ClanLeaderboard): ClanLeaderboard {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* repeated rustplus.ClanLeaderboard.Entry entries */ 1:
+                    message.entries.push(ClanLeaderboard_Entry.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ClanLeaderboard, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* repeated rustplus.ClanLeaderboard.Entry entries = 1; */
+        for (let i = 0; i < message.entries.length; i++)
+            ClanLeaderboard_Entry.internalBinaryWrite(message.entries[i], writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message rustplus.ClanLeaderboard
+ */
+export const ClanLeaderboard = new ClanLeaderboard$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ClanLeaderboard_Entry$Type extends MessageType<ClanLeaderboard_Entry> {
+    constructor() {
+        super("rustplus.ClanLeaderboard.Entry", [
+            { no: 1, name: "clanId", kind: "scalar", opt: true, T: 3 /*ScalarType.INT64*/ },
+            { no: 2, name: "name", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "score", kind: "scalar", opt: true, T: 3 /*ScalarType.INT64*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ClanLeaderboard_Entry>): ClanLeaderboard_Entry {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        if (value !== undefined)
+            reflectionMergePartial<ClanLeaderboard_Entry>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ClanLeaderboard_Entry): ClanLeaderboard_Entry {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* optional int64 clanId */ 1:
+                    message.clanId = reader.int64().toString();
+                    break;
+                case /* optional string name */ 2:
+                    message.name = reader.string();
+                    break;
+                case /* optional int64 score */ 3:
+                    message.score = reader.int64().toString();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ClanLeaderboard_Entry, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* optional int64 clanId = 1; */
+        if (message.clanId !== undefined)
+            writer.tag(1, WireType.Varint).int64(message.clanId);
+        /* optional string name = 2; */
+        if (message.name !== undefined)
+            writer.tag(2, WireType.LengthDelimited).string(message.name);
+        /* optional int64 score = 3; */
+        if (message.score !== undefined)
+            writer.tag(3, WireType.Varint).int64(message.score);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message rustplus.ClanLeaderboard.Entry
+ */
+export const ClanLeaderboard_Entry = new ClanLeaderboard_Entry$Type();
+// @generated message type with reflection information, may provide speed optimized methods
 class ClanInvitations$Type extends MessageType<ClanInvitations> {
     constructor() {
         super("rustplus.ClanInvitations", [
@@ -2605,7 +2895,8 @@ class AppRequest$Type extends MessageType<AppRequest> {
             { no: 25, name: "getNexusAuth", kind: "message", T: () => AppGetNexusAuth },
             { no: 30, name: "cameraSubscribe", kind: "message", T: () => AppCameraSubscribe },
             { no: 31, name: "cameraUnsubscribe", kind: "message", T: () => AppEmpty },
-            { no: 32, name: "cameraInput", kind: "message", T: () => AppCameraInput }
+            { no: 32, name: "cameraInput", kind: "message", T: () => AppCameraInput },
+            { no: 33, name: "kickFromTeam", kind: "message", T: () => AppTeamKick }
         ]);
     }
     create(value?: PartialMessage<AppRequest>): AppRequest {
@@ -2694,6 +2985,9 @@ class AppRequest$Type extends MessageType<AppRequest> {
                 case /* optional rustplus.AppCameraInput cameraInput */ 32:
                     message.cameraInput = AppCameraInput.internalBinaryRead(reader, reader.uint32(), options, message.cameraInput);
                     break;
+                case /* optional rustplus.AppTeamKick kickFromTeam */ 33:
+                    message.kickFromTeam = AppTeamKick.internalBinaryRead(reader, reader.uint32(), options, message.kickFromTeam);
+                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -2778,6 +3072,9 @@ class AppRequest$Type extends MessageType<AppRequest> {
         /* optional rustplus.AppCameraInput cameraInput = 32; */
         if (message.cameraInput)
             AppCameraInput.internalBinaryWrite(message.cameraInput, writer.tag(32, WireType.LengthDelimited).fork(), options).join();
+        /* optional rustplus.AppTeamKick kickFromTeam = 33; */
+        if (message.kickFromTeam)
+            AppTeamKick.internalBinaryWrite(message.kickFromTeam, writer.tag(33, WireType.LengthDelimited).fork(), options).join();
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -3246,6 +3543,52 @@ class AppPromoteToLeader$Type extends MessageType<AppPromoteToLeader> {
  * @generated MessageType for protobuf message rustplus.AppPromoteToLeader
  */
 export const AppPromoteToLeader = new AppPromoteToLeader$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class AppTeamKick$Type extends MessageType<AppTeamKick> {
+    constructor() {
+        super("rustplus.AppTeamKick", [
+            { no: 1, name: "steamId", kind: "scalar", opt: true, T: 4 /*ScalarType.UINT64*/ }
+        ]);
+    }
+    create(value?: PartialMessage<AppTeamKick>): AppTeamKick {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        if (value !== undefined)
+            reflectionMergePartial<AppTeamKick>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: AppTeamKick): AppTeamKick {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* optional uint64 steamId */ 1:
+                    message.steamId = reader.uint64().toString();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: AppTeamKick, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* optional uint64 steamId = 1; */
+        if (message.steamId !== undefined)
+            writer.tag(1, WireType.Varint).uint64(message.steamId);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message rustplus.AppTeamKick
+ */
+export const AppTeamKick = new AppTeamKick$Type();
 // @generated message type with reflection information, may provide speed optimized methods
 class AppGetNexusAuth$Type extends MessageType<AppGetNexusAuth> {
     constructor() {
@@ -3759,7 +4102,8 @@ class AppMap_Monument$Type extends MessageType<AppMap_Monument> {
         super("rustplus.AppMap.Monument", [
             { no: 1, name: "token", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 2, name: "x", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
-            { no: 3, name: "y", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
+            { no: 3, name: "y", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
+            { no: 4, name: "isCustomName", kind: "scalar", opt: true, T: 8 /*ScalarType.BOOL*/ }
         ]);
     }
     create(value?: PartialMessage<AppMap_Monument>): AppMap_Monument {
@@ -3785,6 +4129,9 @@ class AppMap_Monument$Type extends MessageType<AppMap_Monument> {
                 case /* float y */ 3:
                     message.y = reader.float();
                     break;
+                case /* optional bool isCustomName */ 4:
+                    message.isCustomName = reader.bool();
+                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -3806,6 +4153,9 @@ class AppMap_Monument$Type extends MessageType<AppMap_Monument> {
         /* float y = 3; */
         if (message.y !== 0)
             writer.tag(3, WireType.Bit32).float(message.y);
+        /* optional bool isCustomName = 4; */
+        if (message.isCustomName !== undefined)
+            writer.tag(4, WireType.Varint).bool(message.isCustomName);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -4189,11 +4539,11 @@ export const AppTeamInfo_Member = new AppTeamInfo_Member$Type();
 class AppTeamInfo_Note$Type extends MessageType<AppTeamInfo_Note> {
     constructor() {
         super("rustplus.AppTeamInfo.Note", [
-            { no: 2, name: "type", kind: "enum", T: () => ["rustplus.AppTeamInfo.Note.Type", AppTeamInfo_Note_Type] },
+            { no: 2, name: "type", kind: "scalar", T: 5 /*ScalarType.INT32*/ },
             { no: 3, name: "x", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
             { no: 4, name: "y", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
-            { no: 5, name: "icon", kind: "enum", T: () => ["rustplus.AppTeamInfo.Note.Icon", AppTeamInfo_Note_Icon] },
-            { no: 6, name: "colourIndex", kind: "enum", T: () => ["rustplus.AppTeamInfo.Note.ColourIndex", AppTeamInfo_Note_ColourIndex] },
+            { no: 5, name: "icon", kind: "scalar", T: 5 /*ScalarType.INT32*/ },
+            { no: 6, name: "colourIndex", kind: "scalar", T: 5 /*ScalarType.INT32*/ },
             { no: 7, name: "label", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
         ]);
     }
@@ -4213,7 +4563,7 @@ class AppTeamInfo_Note$Type extends MessageType<AppTeamInfo_Note> {
         while (reader.pos < end) {
             let [fieldNo, wireType] = reader.tag();
             switch (fieldNo) {
-                case /* rustplus.AppTeamInfo.Note.Type type */ 2:
+                case /* int32 type */ 2:
                     message.type = reader.int32();
                     break;
                 case /* float x */ 3:
@@ -4222,10 +4572,10 @@ class AppTeamInfo_Note$Type extends MessageType<AppTeamInfo_Note> {
                 case /* float y */ 4:
                     message.y = reader.float();
                     break;
-                case /* rustplus.AppTeamInfo.Note.Icon icon */ 5:
+                case /* int32 icon */ 5:
                     message.icon = reader.int32();
                     break;
-                case /* rustplus.AppTeamInfo.Note.ColourIndex colourIndex */ 6:
+                case /* int32 colourIndex */ 6:
                     message.colourIndex = reader.int32();
                     break;
                 case /* optional string label */ 7:
@@ -4243,7 +4593,7 @@ class AppTeamInfo_Note$Type extends MessageType<AppTeamInfo_Note> {
         return message;
     }
     internalBinaryWrite(message: AppTeamInfo_Note, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
-        /* rustplus.AppTeamInfo.Note.Type type = 2; */
+        /* int32 type = 2; */
         if (message.type !== 0)
             writer.tag(2, WireType.Varint).int32(message.type);
         /* float x = 3; */
@@ -4252,10 +4602,10 @@ class AppTeamInfo_Note$Type extends MessageType<AppTeamInfo_Note> {
         /* float y = 4; */
         if (message.y !== 0)
             writer.tag(4, WireType.Bit32).float(message.y);
-        /* rustplus.AppTeamInfo.Note.Icon icon = 5; */
+        /* int32 icon = 5; */
         if (message.icon !== 0)
             writer.tag(5, WireType.Varint).int32(message.icon);
-        /* rustplus.AppTeamInfo.Note.ColourIndex colourIndex = 6; */
+        /* int32 colourIndex = 6; */
         if (message.colourIndex !== 0)
             writer.tag(6, WireType.Varint).int32(message.colourIndex);
         /* optional string label = 7; */
@@ -4550,7 +4900,8 @@ class AppMarker_SellOrder$Type extends MessageType<AppMarker_SellOrder> {
             { no: 7, name: "currencyIsBlueprint", kind: "scalar", T: 8 /*ScalarType.BOOL*/ },
             { no: 8, name: "itemCondition", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
             { no: 9, name: "itemConditionMax", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
-            { no: 10, name: "priceMultiplier", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
+            { no: 10, name: "priceMultiplier", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
+            { no: 11, name: "receivedQuantityMultiplier", kind: "scalar", opt: true, T: 2 /*ScalarType.FLOAT*/ }
         ]);
     }
     create(value?: PartialMessage<AppMarker_SellOrder>): AppMarker_SellOrder {
@@ -4604,6 +4955,9 @@ class AppMarker_SellOrder$Type extends MessageType<AppMarker_SellOrder> {
                 case /* float priceMultiplier */ 10:
                     message.priceMultiplier = reader.float();
                     break;
+                case /* optional float receivedQuantityMultiplier */ 11:
+                    message.receivedQuantityMultiplier = reader.float();
+                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -4646,6 +5000,9 @@ class AppMarker_SellOrder$Type extends MessageType<AppMarker_SellOrder> {
         /* float priceMultiplier = 10; */
         if (message.priceMultiplier !== 0)
             writer.tag(10, WireType.Bit32).float(message.priceMultiplier);
+        /* optional float receivedQuantityMultiplier = 11; */
+        if (message.receivedQuantityMultiplier !== undefined)
+            writer.tag(11, WireType.Bit32).float(message.receivedQuantityMultiplier);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -5364,7 +5721,10 @@ class AppCameraRays$Type extends MessageType<AppCameraRays> {
             { no: 3, name: "rayData", kind: "scalar", T: 12 /*ScalarType.BYTES*/ },
             { no: 4, name: "distance", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
             { no: 5, name: "entities", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => AppCameraRays_Entity },
-            { no: 6, name: "timeOfDay", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ }
+            { no: 6, name: "timeOfDay", kind: "scalar", T: 2 /*ScalarType.FLOAT*/ },
+            { no: 7, name: "cameraPosition", kind: "message", T: () => Vector3 },
+            { no: 8, name: "cameraRotation", kind: "message", T: () => Vector3 },
+            { no: 9, name: "sampleRotation", kind: "message", T: () => Vector3 }
         ]);
     }
     create(value?: PartialMessage<AppCameraRays>): AppCameraRays {
@@ -5402,6 +5762,15 @@ class AppCameraRays$Type extends MessageType<AppCameraRays> {
                 case /* float timeOfDay */ 6:
                     message.timeOfDay = reader.float();
                     break;
+                case /* optional rustplus.Vector3 cameraPosition */ 7:
+                    message.cameraPosition = Vector3.internalBinaryRead(reader, reader.uint32(), options, message.cameraPosition);
+                    break;
+                case /* optional rustplus.Vector3 cameraRotation */ 8:
+                    message.cameraRotation = Vector3.internalBinaryRead(reader, reader.uint32(), options, message.cameraRotation);
+                    break;
+                case /* optional rustplus.Vector3 sampleRotation */ 9:
+                    message.sampleRotation = Vector3.internalBinaryRead(reader, reader.uint32(), options, message.sampleRotation);
+                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -5432,6 +5801,15 @@ class AppCameraRays$Type extends MessageType<AppCameraRays> {
         /* float timeOfDay = 6; */
         if (message.timeOfDay !== 0)
             writer.tag(6, WireType.Bit32).float(message.timeOfDay);
+        /* optional rustplus.Vector3 cameraPosition = 7; */
+        if (message.cameraPosition)
+            Vector3.internalBinaryWrite(message.cameraPosition, writer.tag(7, WireType.LengthDelimited).fork(), options).join();
+        /* optional rustplus.Vector3 cameraRotation = 8; */
+        if (message.cameraRotation)
+            Vector3.internalBinaryWrite(message.cameraRotation, writer.tag(8, WireType.LengthDelimited).fork(), options).join();
+        /* optional rustplus.Vector3 sampleRotation = 9; */
+        if (message.sampleRotation)
+            Vector3.internalBinaryWrite(message.sampleRotation, writer.tag(9, WireType.LengthDelimited).fork(), options).join();
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);

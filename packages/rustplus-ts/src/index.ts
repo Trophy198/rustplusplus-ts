@@ -19,6 +19,7 @@
 */
 
 export * from './interfaces/rustplus';
+export * from './note-values';
 export * from './validation';
 export * from './rustplus';
 export * from './camera';

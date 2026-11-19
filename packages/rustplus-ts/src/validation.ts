@@ -21,8 +21,10 @@
 'use strict'
 
 import { Logger } from 'winston';
+import type { IMessageType } from '@protobuf-ts/runtime';
 
 import * as rpi from './interfaces/rustplus';
+import { AppTeamInfo_Note_ColourIndex, AppTeamInfo_Note_Icon, AppTeamInfo_Note_Type } from './note-values';
 import * as rp from './rustplus';
 
 /**
@@ -58,6 +60,34 @@ function validateEntityId(value: unknown): ValidationError | null {
     return isUint64String(value) ? null : { key: 'entityId', value, expected: 'uint64 decimal string' };
 }
 
+function isInt64String(value: unknown): boolean {
+    if (typeof value !== 'string' || !/^(?:0|-?[1-9][0-9]{0,18})$/.test(value)) return false;
+    const integer = BigInt(value);
+    return integer >= -9223372036854775808n && integer <= 9223372036854775807n;
+}
+
+function isInt32(value: unknown): boolean {
+    return typeof value === 'number' && Number.isInteger(value) && value >= -2147483648 && value <= 2147483647;
+}
+
+function validateInt32(key: string, value: unknown): ValidationError | null {
+    return isInt32(value) ? null : { key, value, expected: 'int32' };
+}
+
+function validateUint32(key: string, value: unknown): ValidationError | null {
+    const valid = typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 4294967295;
+    return valid ? null : { key, value, expected: 'uint32' };
+}
+
+// The generated checker verifies keys and scalar types. Check wire ranges, field presence
+// and every repeated entry here (its recursive checker samples arrays up to a depth limit).
+function validateWireMessage<T extends object>(type: IMessageType<T>, value: unknown, logger: Logger | null,
+    checkFields: (message: T) => boolean): value is T {
+    if (!Array.isArray(value) && type.is(value, 1) && checkFields(value)) return true;
+    logger?.error(`Invalid ${type.typeName} message.`);
+    return false;
+}
+
 function validateInterface(key: string, value: unknown, logger: Logger | null = null,
     validationCallback: (input: unknown, logger: Logger | null) => boolean): ValidationError | null {
     if (!validationCallback(value, logger)) {
@@ -73,13 +103,8 @@ function validateArrayOfInterfaces(key: string, value: unknown, logger: Logger |
         return { key: key, value: getTypeOf(value), expected: 'Array of interfaces' };
     }
 
-    const errors = value.map(item => {
-        const isValid = validationCallback(item, logger);
-        return isValid ? null : 'Invalid';
-    }).filter(error => error !== null) as string[];
-
-    if (errors.length > 0) {
-        return { key, value: 'unknown', expected: 'Array of interfaces' };
+    for (const item of value) {
+        if (!validationCallback(item, logger)) return { key, value: 'unknown', expected: 'Array of interfaces' };
     }
 
     return null;
@@ -250,9 +275,9 @@ export function isValidHalf3(object: unknown, logger: Logger | null = null): obj
     ];
 
     const errors: (ValidationError | null)[] = [];
-    errors.push(validateType('x', obj.x, 'number'));
-    errors.push(validateType('y', obj.y, 'number'));
-    errors.push(validateType('z', obj.z, 'number'));
+    errors.push(validateUint32('x', obj.x));
+    errors.push(validateUint32('y', obj.y));
+    errors.push(validateUint32('z', obj.z));
 
     const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
 
@@ -647,6 +672,45 @@ export function isValidClanInvitations_Invitation(object: unknown, logger: Logge
     return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
+export function isValidClanScoreEvents_Entry(object: unknown, logger: Logger | null = null):
+    object is rpi.ClanScoreEvents_Entry {
+    return validateWireMessage(rpi.ClanScoreEvents_Entry, object, logger, entry =>
+        (entry.timestamp === undefined || isInt64String(entry.timestamp)) &&
+        (entry.type === undefined || isInt32(entry.type)) &&
+        (entry.score === undefined || isInt32(entry.score)) &&
+        (entry.multiplier === undefined || isInt32(entry.multiplier)) &&
+        (entry.steamId === undefined || isUint64String(entry.steamId)) &&
+        (entry.otherSteamId === undefined || isUint64String(entry.otherSteamId)) &&
+        (entry.otherClanId === undefined || isInt64String(entry.otherClanId)));
+}
+
+export function isValidClanScoreEvents(object: unknown, logger: Logger | null = null): object is rpi.ClanScoreEvents {
+    return validateWireMessage(rpi.ClanScoreEvents, object, logger, message =>
+        (message.clanId === undefined || isInt64String(message.clanId)) &&
+        validateArrayOfInterfaces('scoreEvents', message.scoreEvents, logger, isValidClanScoreEvents_Entry) === null);
+}
+
+type NamedClanEntry = rpi.ClanLeaderboard_Entry & { name: string };
+
+export function isValidClanLeaderboard_Entry(object: unknown, logger: Logger | null = null):
+    object is NamedClanEntry {
+    return validateWireMessage(rpi.ClanLeaderboard_Entry, object, logger, entry =>
+        Object.hasOwn(entry, 'name') && typeof entry.name === 'string' &&
+        (entry.clanId === undefined || isInt64String(entry.clanId)) &&
+        (entry.score === undefined || isInt64String(entry.score)));
+}
+
+export function isValidClanLeaderboard(object: unknown, logger: Logger | null = null):
+    object is rpi.ClanLeaderboard & { entries: NamedClanEntry[] } {
+    return validateWireMessage(rpi.ClanLeaderboard, object, logger, message =>
+        validateArrayOfInterfaces('entries', message.entries, logger, isValidClanLeaderboard_Entry) === null);
+}
+
+export function isValidAppTeamKick(object: unknown, logger: Logger | null = null): object is rpi.AppTeamKick {
+    return validateWireMessage(rpi.AppTeamKick, object, logger, kick =>
+        kick.steamId === undefined || isUint64String(kick.steamId));
+}
+
 export function isValidAppRequest(object: unknown, logger: Logger | null = null): object is rpi.AppRequest {
     if (typeof object !== 'object' || object === null || Array.isArray(object)) {
         return false;
@@ -679,7 +743,8 @@ export function isValidAppRequest(object: unknown, logger: Logger | null = null)
         'getNexusAuth',
         'cameraSubscribe',
         'cameraUnsubscribe',
-        'cameraInput'
+        'cameraInput',
+        'kickFromTeam'
     ];
 
     const errors: (ValidationError | null)[] = [];
@@ -727,6 +792,8 @@ export function isValidAppRequest(object: unknown, logger: Logger | null = null)
         validateInterface('cameraUnsubscribe', obj.cameraUnsubscribe, logger, isValidAppEmpty) : null);
     errors.push(Object.hasOwn(obj, 'cameraInput') ?
         validateInterface('cameraInput', obj.cameraInput, logger, isValidAppCameraInput) : null);
+    errors.push(obj.kickFromTeam === undefined ? null :
+        validateInterface('kickFromTeam', obj.kickFromTeam, logger, isValidAppTeamKick));
 
     const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
 
@@ -1230,13 +1297,15 @@ export function isValidAppMap_Monument(object: unknown, logger: Logger | null = 
     const validKeys = [
         'token',
         'x',
-        'y'
+        'y',
+        'isCustomName'
     ];
 
     const errors: (ValidationError | null)[] = [];
     errors.push(validateType('token', obj.token, 'string'));
     errors.push(validateType('x', obj.x, 'number'));
     errors.push(validateType('y', obj.y, 'number'));
+    errors.push(validateType('isCustomName', obj.isCustomName, 'boolean', undefined));
 
     const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
 
@@ -1341,11 +1410,11 @@ export function isValidAppTeamInfo_Note(object: unknown, logger: Logger | null =
     ];
 
     const errors: (ValidationError | null)[] = [];
-    errors.push(validateInterface('type', obj.type, logger, isValidAppTeamInfo_Note_Type));
+    errors.push(validateInt32('type', obj.type));
     errors.push(validateType('x', obj.x, 'number'));
     errors.push(validateType('y', obj.y, 'number'));
-    errors.push(validateInterface('icon', obj.icon, logger, isValidAppTeamInfo_Note_Icon));
-    errors.push(validateInterface('colourIndex', obj.colourIndex, logger, isValidAppTeamInfo_Note_ColourIndex));
+    errors.push(validateInt32('icon', obj.icon));
+    errors.push(validateInt32('colourIndex', obj.colourIndex));
     errors.push(validateType('label', obj.label, 'string', undefined));
 
     const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
@@ -1359,16 +1428,16 @@ export function isValidAppTeamInfo_Note(object: unknown, logger: Logger | null =
     return filteredErrors.length === 0 && hasOnlyValidKeys;
 }
 
-export function isValidAppTeamInfo_Note_Type(value: unknown): value is rpi.AppTeamInfo_Note_Type {
-    return typeof value === 'number' && Object.values(rpi.AppTeamInfo_Note_Type).includes(value);
+export function isValidAppTeamInfo_Note_Type(value: unknown): value is AppTeamInfo_Note_Type {
+    return typeof value === 'number' && Object.values(AppTeamInfo_Note_Type).includes(value);
 }
 
-export function isValidAppTeamInfo_Note_Icon(value: unknown): value is rpi.AppTeamInfo_Note_Icon {
-    return typeof value === 'number' && Object.values(rpi.AppTeamInfo_Note_Icon).includes(value);
+export function isValidAppTeamInfo_Note_Icon(value: unknown): value is AppTeamInfo_Note_Icon {
+    return typeof value === 'number' && Object.values(AppTeamInfo_Note_Icon).includes(value);
 }
 
-export function isValidAppTeamInfo_Note_ColourIndex(value: unknown): value is rpi.AppTeamInfo_Note_ColourIndex {
-    return typeof value === 'number' && Object.values(rpi.AppTeamInfo_Note_ColourIndex).includes(value);
+export function isValidAppTeamInfo_Note_ColourIndex(value: unknown): value is AppTeamInfo_Note_ColourIndex {
+    return typeof value === 'number' && Object.values(AppTeamInfo_Note_ColourIndex).includes(value);
 }
 
 export function isValidAppTeamChat(object: unknown, logger: Logger | null = null): object is rpi.AppTeamChat {
@@ -1461,7 +1530,8 @@ export function isValidAppEntityInfo(object: unknown, logger: Logger | null = nu
 }
 
 export function isValidAppEntityType(value: unknown): value is rpi.AppEntityType {
-    return typeof value === 'number' && Object.values(rpi.AppEntityType).includes(value);
+    return value === rpi.AppEntityType.Switch || value === rpi.AppEntityType.Alarm ||
+        value === rpi.AppEntityType.StorageMonitor;
 }
 
 export function isValidAppEntityPayload(object: unknown, logger: Logger | null = null): object is rpi.AppEntityPayload {
@@ -1630,7 +1700,8 @@ export function isValidAppMarker_SellOrder(object: unknown, logger: Logger | nul
         'currencyIsBlueprint',
         'itemCondition',
         'itemConditionMax',
-        'priceMultiplier'
+        'priceMultiplier',
+        'receivedQuantityMultiplier'
     ];
 
     const errors: (ValidationError | null)[] = [];
@@ -1644,6 +1715,7 @@ export function isValidAppMarker_SellOrder(object: unknown, logger: Logger | nul
     errors.push(validateType('itemCondition', obj.itemCondition, 'number'));
     errors.push(validateType('itemConditionMax', obj.itemConditionMax, 'number'));
     errors.push(validateType('priceMultiplier', obj.priceMultiplier, 'number'));
+    errors.push(validateType('receivedQuantityMultiplier', obj.receivedQuantityMultiplier, 'number', undefined));
 
     const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
 
@@ -2003,7 +2075,10 @@ export function isValidAppCameraRays(object: unknown, logger: Logger | null = nu
         'rayData',
         'distance',
         'entities',
-        'timeOfDay'
+        'timeOfDay',
+        'cameraPosition',
+        'cameraRotation',
+        'sampleRotation'
     ];
 
     const errors: (ValidationError | null)[] = [];
@@ -2013,6 +2088,9 @@ export function isValidAppCameraRays(object: unknown, logger: Logger | null = nu
     errors.push(validateType('distance', obj.distance, 'number'));
     errors.push(validateArrayOfInterfaces('entities', obj.entities, logger, isValidAppCameraRays_Entity));
     errors.push(validateType('timeOfDay', obj.timeOfDay, 'number'));
+    for (const key of ['cameraPosition', 'cameraRotation', 'sampleRotation'] as const) {
+        if (obj[key] !== undefined) errors.push(validateInterface(key, obj[key], logger, isValidVector3));
+    }
 
     const filteredErrors = errors.filter((error): error is ValidationError => error !== null);
 
@@ -2066,7 +2144,7 @@ export function isValidAppCameraRays_Entity(object: unknown, logger: Logger | nu
 }
 
 export function isValidAppCameraRays_EntityType(value: unknown): value is rpi.AppCameraRays_EntityType {
-    return typeof value === 'number' && Object.values(rpi.AppCameraRays_EntityType).includes(value);
+    return value === rpi.AppCameraRays_EntityType.Tree || value === rpi.AppCameraRays_EntityType.Player;
 }
 
 

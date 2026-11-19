@@ -10,7 +10,7 @@
         "compile": "tsc",
         "preinstall": "npx npm-force-resolutions",
         "pretest": "npm run build --workspace rustplus-ts",
-        "test": "tsc --noEmit -p . && node --require ts-node/register/transpile-only --test tests/fcm.test.cjs tests/relay.test.cjs",
+        "test": "tsc --noEmit -p . && node --require ts-node/register/transpile-only --test tests/*.test.cjs",
         "lint": "npx eslint . --ext .ts",
         "gen-env": "ts-node scripts/generate-env.ts",
         "gen-icons": "ts-node scripts/generate-icons.ts",

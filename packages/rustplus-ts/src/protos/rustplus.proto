@@ -20,9 +20,9 @@ message Vector4 {
 }
 
 message Half3 {
-    float x = 1;
-    float y = 2;
-    float z = 3;
+    uint32 x = 1;
+    uint32 y = 2;
+    uint32 z = 3;
 }
 
 message Color {
@@ -105,6 +105,35 @@ message ClanLog {
     }
 }
 
+message ClanScoreEvents {
+    optional int64 clanId = 1;
+    repeated Entry scoreEvents = 2;
+
+    message Entry {
+        optional int64 timestamp = 1;
+        optional int32 type = 2;
+        optional int32 score = 3;
+        optional int32 multiplier = 4;
+        optional uint64 steamId = 5;
+        optional uint64 otherSteamId = 6;
+        optional int64 otherClanId = 7;
+        optional string arg1 = 8;
+        optional string arg2 = 9;
+    }
+}
+
+message ClanLeaderboard {
+    repeated Entry entries = 1;
+
+    message Entry {
+        optional int64 clanId = 1;
+        // The official decoder requires this tag even for an empty name.
+        // Track presence in proto3 so the validator can reject a missing name.
+        optional string name = 2;
+        optional int64 score = 3;
+    }
+}
+
 message ClanInvitations {
     repeated ClanInvitations.Invitation invitations = 1;
 
@@ -116,6 +145,7 @@ message ClanInvitations {
 }
 
 enum AppEntityType {
+    // Proto3 zero placeholder. The official verifier accepts values 1 through 3.
     Reserved = 0;
     Switch = 1;
     Alarm = 2;
@@ -160,6 +190,7 @@ message AppRequest {
     optional AppCameraSubscribe cameraSubscribe = 30;
     optional AppEmpty cameraUnsubscribe = 31;
     optional AppCameraInput cameraInput = 32;
+    optional AppTeamKick kickFromTeam = 33;
 }
 
 message AppMessage {
@@ -207,6 +238,10 @@ message AppSetEntityValue {
 
 message AppPromoteToLeader {
     uint64 steamId = 1;
+}
+
+message AppTeamKick {
+    optional uint64 steamId = 1;
 }
 
 message AppGetNexusAuth {
@@ -263,6 +298,7 @@ message AppMap {
         string token = 1;
         float x = 2;
         float y = 3;
+        optional bool isCustomName = 4;
     }
 }
 
@@ -303,41 +339,12 @@ message AppTeamInfo {
     }
 
     message Note {
-        Type type = 2;
+        int32 type = 2;
         float x = 3;
         float y = 4;
-        Icon icon = 5;
-        ColourIndex colourIndex = 6;
+        int32 icon = 5;
+        int32 colourIndex = 6;
         optional string label = 7;
-
-        enum Type {
-            Death = 0;
-            PointOfInterest = 1;
-        }
-
-        enum Icon {
-            Pin = 0;
-            Dollar = 1;
-            Home = 2;
-            Parachute = 3;
-            Scope = 4;
-            Shield = 5;
-            Skull = 6;
-            Sleep = 7;
-            Zzz = 8;
-            Gun = 9;
-            Rock = 10;
-            Loot = 11;
-        }
-
-        enum ColourIndex {
-            Yellow = 0;
-            Blue = 1;
-            Green = 2;
-            Red = 3;
-            Purple = 4;
-            Cyan = 5;
-        }
     }
 }
 
@@ -379,6 +386,8 @@ message AppMarker {
         float itemCondition = 8;
         float itemConditionMax = 9;
         float priceMultiplier = 10;
+        // The official default is 1. An explicitly sent zero has a different meaning.
+        optional float receivedQuantityMultiplier = 11;
     }
 }
 
@@ -453,8 +462,12 @@ message AppCameraRays {
     float distance = 4;
     repeated AppCameraRays.Entity entities = 5;
     float timeOfDay = 6;
+    optional Vector3 cameraPosition = 7;
+    optional Vector3 cameraRotation = 8;
+    optional Vector3 sampleRotation = 9;
 
     enum EntityType {
+        // Proto3 zero placeholder. The official verifier accepts Tree and Player.
         Reserved = 0;
         Tree = 1;
         Player = 2;
