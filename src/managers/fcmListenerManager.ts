@@ -292,7 +292,9 @@ export class FcmListenerManager {
                 return;
             }
 
-            this.onDataReceived(steamId, data);
+            void this.onDataReceived(steamId, data).catch(() => {
+                log.warn(`${fn} Could not process notification.`, logParam);
+            });
         });
         void client.connect().catch(() => {
             if (this.listeners[steamId] === client) {
@@ -316,7 +318,7 @@ export class FcmListenerManager {
         }
     }
 
-    private onDataReceived(steamId: types.SteamId, data: FcmNotification): void {
+    private async onDataReceived(steamId: types.SteamId, data: FcmNotification) {
         const fn = `[${this.constructor.name}: onDataReceived]`;
         const logParam = { steamId: steamId };
 
@@ -354,19 +356,17 @@ export class FcmListenerManager {
                         log.info(`${fn} ${ChannelIds.PAIRING}: ${PairingTypes.SERVER}`, logParam);
                         if (!vu.isValidObject(body, PairingServerBodySchema)) return;
 
-                        pairingServer(this, steamId, body);
+                        await pairingServer(this, steamId, body);
                     } break;
 
                     case PairingTypes.ENTITY: {
-                        // TODO! If entity pairing, pair server too, all parts of server pairing body is available in
-                        // entity pairing body
                         switch (body.entityType) {
                             case PairingEntityTypes.SMART_SWITCH: {
                                 log.info(`${fn} ${ChannelIds.PAIRING}: ${PairingTypes.ENTITY}: ` +
                                     `${PairingEntityNames.SMART_SWITCH}`, logParam);
                                 if (!vu.isValidObject(body, PairingEntityBodySchema)) return;
 
-                                pairingEntitySmartSwitch(this, steamId, body);
+                                await pairingServer(this, steamId, body);
                             } break;
 
                             case PairingEntityTypes.SMART_ALARM: {
@@ -480,10 +480,12 @@ export class FcmListenerManager {
     }
 }
 
-async function pairingServer(flm: FcmListenerManager, steamId: types.SteamId, body: PairingServerBody) {
+async function pairingServer(flm: FcmListenerManager, steamId: types.SteamId,
+    body: PairingServerBody | PairingEntityBody) {
     const fn = `[${flm.constructor.name}: pairingServer]`;
     const logParam = { steamId: steamId };
 
+    if (body.playerId !== steamId) return;
     const credentials = cm.getCredentials(steamId);
 
     if (!credentials) {
@@ -495,115 +497,86 @@ async function pairingServer(flm: FcmListenerManager, steamId: types.SteamId, bo
     for (const guildId of associatedGuilds) {
         const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
         const serverId = pairingServerKey(gInstance.serverInfoMap, body);
-        const serverInfo = gInstance.serverInfoMap[serverId];
-
-        let message = null;
-        if (serverInfo && gInstance.guildChannelIds.servers !== null && serverInfo.messageId !== null) {
-            message = await flm.dm.getMessage(guildId, gInstance.guildChannelIds.servers, serverInfo.messageId);
+        const switchBody = 'entityId' in body ? body : undefined;
+        const newServer = !gInstance.serverInfoMap[serverId];
+        if (newServer || !switchBody) {
+            let image = constants.DEFAULT_SERVER_IMAGE;
+            let logo = constants.DEFAULT_SERVER_IMAGE;
+            if (!switchBody) {
+                const imageUrl = encodeURI(decodeURI(body.img));
+                const logoUrl = encodeURI(decodeURI(body.logo));
+                if (await vu.isValidImageUrl(imageUrl)) image = imageUrl;
+                if (await vu.isValidImageUrl(logoUrl)) logo = logoUrl;
+            }
+            storePairedServer(gInstance, serverId, body, image, logo);
         }
 
-        const img = encodeURI(decodeURI(body.img));
-        const logo = encodeURI(decodeURI(body.logo));
-        const url = encodeURI(decodeURI(body.url));
-
-        const image = await vu.isValidImageUrl(img) ? img : constants.DEFAULT_SERVER_IMAGE;
-        const logoImage = await vu.isValidImageUrl(logo) ? logo : constants.DEFAULT_SERVER_IMAGE;
-        const previous = gInstance.serverInfoMap[serverId];
-        gInstance.serverInfoMap[serverId] = {
-            name: body.name,
-            desc: body.desc.replaceAll('\\n', '\n').replaceAll('\\t', '\t'),
-            img: image,
-            logo: logoImage,
-            url: vu.isValidUrl(url) ? url : constants.DEFAULT_SERVER_URL,
-            ip: body.ip || previous?.ip || '',
-            port: body.port || previous?.port || '',
-            relayServerId: body.id || previous?.relayServerId,
-            messageId: (message) ? message.id : null,
-            pairedDate: Math.floor(Date.now() / 1000),
-            requesterSteamId: previous ? previous.requesterSteamId : body.playerId,
-            active: previous ? previous.active : false,
-            connect: previous?.connect ?? null,
-            markerMap: previous ? previous.markerMap : {},
-            noteMap: previous ? previous.noteMap : {},
-            battlemetricsId: previous?.battlemetricsId ?? null,
-            smartSwitchConfigMap: previous ? previous.smartSwitchConfigMap : {},
-            smartAlarmConfigMap: previous ? previous.smartAlarmConfigMap : {},
-            storageMonitorConfigMap: previous ? previous.storageMonitorConfigMap : {},
-            smartSwitchGroupConfigMap: previous ? previous.smartSwitchGroupConfigMap : {},
-            customVariables: previous ? previous.customVariables : {
-                cargoShipEgressTimeMs: constants.DEFAULT_CARGO_SHIP_EGRESS_TIME_MS,
-                cargoShipHarborDockingTimeMs: constants.DEFAULT_CARGO_SHIP_HARBOR_DOCKING_TIME_MS,
-                cargoShipLootRounds: constants.CARGO_SHIP_LOOT_ROUNDS,
-                cargoShipLootRoundsSpacingTimeMs: constants.DEFAULT_CARGO_SHIP_LOOT_ROUNDS_SPACING_TIME_MS,
-                deepSeaDurationTimeMs: constants.DEFAULT_DEEP_SEA_DURATION_TIME_MS,
-                lockedCrateUnlockTimeMs: constants.DEFAULT_LOCKED_CRATE_UNLOCK_TIME_MS,
-                travellingVendorDurationTimeMs: constants.DEFAULT_TRAVELLING_VENDOR_ACTIVE_TIME_MS
-            },
-            dayDurationSeconds: previous ? previous.dayDurationSeconds : null,
-            nightDurationSeconds: previous ? previous.nightDurationSeconds : null
-        };
+        const server = gInstance.serverInfoMap[serverId];
+        if (switchBody) {
+            const entityId = switchBody.entityId;
+            const device = server.smartSwitchConfigMap[entityId] ??= {
+                entityId, messageId: null, pairedDate: 0,
+                name: lm.getIntl(gInstance.generalSettings.language, 'smartSwitch'),
+                command: entityId, img: 'smart_switch.png', autoSetting: SmartSwitchConfigAutoSetting.Off,
+                proximitySetting: constants.PROXIMITY_SETTING_DEFAULT_METERS
+            };
+            device.pairedDate = Math.floor(Date.now() / 1000);
+            device.pairedSteamIds ??= [];
+            if (!device.pairedSteamIds.includes(steamId)) device.pairedSteamIds.push(steamId);
+        }
 
         updatePairingDetails(gInstance, serverId, steamId, body);
         if (gInstance.serverToView === null) gInstance.serverToView = serverId;
         gim.updateGuildInstance(guildId);
 
-        let connectionStatus = ConnectionStatus.Disconnected;
-        const rpInstance = rpm.getInstance(guildId, serverId);
-        if (rpInstance) {
-            connectionStatus = rpInstance.connectionStatus;
+        const instance = rpm.getInstance(guildId, serverId);
+        if (newServer || !switchBody) {
+            await discordMessages.sendServerMessage(flm.dm, guildId, serverId,
+                instance?.connectionStatus ?? ConnectionStatus.Disconnected);
         }
-
-        await discordMessages.sendServerMessage(flm.dm, guildId, serverId, connectionStatus);
+        if (switchBody && server.active && instance) {
+            await instance.requestSmartSwitch(switchBody.entityId);
+        }
     }
 }
 
-async function pairingEntitySmartSwitch(flm: FcmListenerManager, steamId: types.SteamId, body: PairingEntityBody) {
-    const fn = `[${flm.constructor.name}: pairingEntitySmartSwitch]`;
-    const logParam = { steamId: steamId };
-
-    const credentials = cm.getCredentials(steamId);
-
-    if (!credentials) {
-        log.warn(`${fn} Could not find Credentials.`, logParam);
-        return;
-    }
-
-    const associatedGuilds = await dm.getGuildIdsForUser(credentials.discordUserId);
-    for (const guildId of associatedGuilds) {
-        const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-        const language = gInstance.generalSettings.language;
-
-        const serverId = pairingServerKey(gInstance.serverInfoMap, body);
-        const serverInfo = gInstance.serverInfoMap[serverId];
-        if (!serverInfo) {
-            log.warn(`${fn} Could not find server.`, { guildId: guildId, serverId: serverId, steamId: steamId });
-            continue;
-        }
-
-        const smartSwitchConfigMap = serverInfo.smartSwitchConfigMap;
-        const exist = body.entityId in smartSwitchConfigMap;
-        smartSwitchConfigMap[body.entityId] = {
-            entityId: body.entityId,
-            messageId: exist ? smartSwitchConfigMap[body.entityId].messageId : null,
-            pairedDate: Math.floor(Date.now() / 1000),
-            name: exist ? smartSwitchConfigMap[body.entityId].name : lm.getIntl(language, 'smartSwitch'),
-            command: exist ? smartSwitchConfigMap[body.entityId].command : body.entityId,
-            img: exist ? smartSwitchConfigMap[body.entityId].img : 'smart_switch.png',
-            autoSetting: exist ? smartSwitchConfigMap[body.entityId].autoSetting : SmartSwitchConfigAutoSetting.Off,
-            proximitySetting: exist ? smartSwitchConfigMap[body.entityId].proximitySetting :
-                constants.PROXIMITY_SETTING_DEFAULT_METERS
-        };
-
-        updatePairingDetails(gInstance, serverId, steamId, body);
-        gim.updateGuildInstance(guildId);
-
-        // TODO! Add the switch to rustplusManager
-
-        const rpInstance = rpm.getInstance(guildId, serverId);
-        if (rpInstance && serverInfo.active) {
-            await discordMessages.sendSmartSwitchMessage(flm.dm, guildId, serverId, body.entityId);
-        }
-    }
+function storePairedServer(gInstance: GuildInstance, serverId: types.ServerId, body: PairingServerBody,
+    image: string, logo: string) {
+    const url = body.url;
+    const previous = gInstance.serverInfoMap[serverId];
+    gInstance.serverInfoMap[serverId] = {
+        name: body.name,
+        desc: body.desc.replaceAll('\\n', '\n').replaceAll('\\t', '\t'),
+        img: image,
+        logo: logo,
+        url: vu.isValidUrl(url) ? url : constants.DEFAULT_SERVER_URL,
+        ip: body.ip || previous?.ip || '',
+        port: body.port || previous?.port || '',
+        relayServerId: body.id || previous?.relayServerId,
+        messageId: previous?.messageId ?? null,
+        pairedDate: Math.floor(Date.now() / 1000),
+        requesterSteamId: previous ? previous.requesterSteamId : body.playerId,
+        active: previous ? previous.active : false,
+        connect: previous?.connect ?? null,
+        markerMap: previous ? previous.markerMap : {},
+        noteMap: previous ? previous.noteMap : {},
+        battlemetricsId: previous?.battlemetricsId ?? null,
+        smartSwitchConfigMap: previous ? previous.smartSwitchConfigMap : {},
+        smartAlarmConfigMap: previous ? previous.smartAlarmConfigMap : {},
+        storageMonitorConfigMap: previous ? previous.storageMonitorConfigMap : {},
+        smartSwitchGroupConfigMap: previous ? previous.smartSwitchGroupConfigMap : {},
+        customVariables: previous ? previous.customVariables : {
+            cargoShipEgressTimeMs: constants.DEFAULT_CARGO_SHIP_EGRESS_TIME_MS,
+            cargoShipHarborDockingTimeMs: constants.DEFAULT_CARGO_SHIP_HARBOR_DOCKING_TIME_MS,
+            cargoShipLootRounds: constants.CARGO_SHIP_LOOT_ROUNDS,
+            cargoShipLootRoundsSpacingTimeMs: constants.DEFAULT_CARGO_SHIP_LOOT_ROUNDS_SPACING_TIME_MS,
+            deepSeaDurationTimeMs: constants.DEFAULT_DEEP_SEA_DURATION_TIME_MS,
+            lockedCrateUnlockTimeMs: constants.DEFAULT_LOCKED_CRATE_UNLOCK_TIME_MS,
+            travellingVendorDurationTimeMs: constants.DEFAULT_TRAVELLING_VENDOR_ACTIVE_TIME_MS
+        },
+        dayDurationSeconds: previous ? previous.dayDurationSeconds : null,
+        nightDurationSeconds: previous ? previous.nightDurationSeconds : null
+    };
 }
 
 async function pairingEntitySmartAlarm(flm: FcmListenerManager, steamId: types.SteamId, body: PairingEntityBody) {

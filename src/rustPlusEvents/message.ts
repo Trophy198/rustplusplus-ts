@@ -45,7 +45,7 @@ export async function execute(rpInstance: RustPlusInstance, appMessage: rp.AppMe
         appMessageResponse(rpInstance, appMessage.response as rp.AppResponse);
     }
     else if (Object.hasOwn(appMessage, 'broadcast')) {
-        appMessageBroadcast(rpInstance, appMessage.broadcast as rp.AppBroadcast);
+        await appMessageBroadcast(rpInstance, appMessage.broadcast as rp.AppBroadcast);
     }
 }
 
@@ -62,8 +62,9 @@ async function appMessageBroadcast(rpInstance: RustPlusInstance, appBroadcast: r
     else if (Object.hasOwn(appBroadcast, 'teamMessage')) {
         appMessageBroadcastNewTeamMessage(rpInstance, appBroadcast.teamMessage as rp.AppNewTeamMessage);
     }
-    else if (Object.hasOwn(appBroadcast, 'entityChanged')) {
-        appMessageBroadcastEntityChanged(rpInstance, appBroadcast.entityChanged as rp.AppEntityChanged);
+    else if (appBroadcast.entityChanged?.payload && appBroadcast.entityChanged.entityId !== undefined) {
+        const { entityId, payload } = appBroadcast.entityChanged;
+        await rpInstance.smartSwitchChanged(entityId, payload.value);
     }
     else if (Object.hasOwn(appBroadcast, 'clanChanged')) {
         appMessageBroadcastClanChanged(rpInstance, appBroadcast.clanChanged as rp.AppClanChanged);
@@ -136,11 +137,6 @@ async function appMessageBroadcastNewTeamMessage(rpInstance: RustPlusInstance,
 
     await discordMessages.sendTeamChatMessage(dm, rpInstance.guildId, teamMessage);
     log.info(`${fn} In-Game message: ${teamMessage.name}: ${teamMessage.message}.`, logParam);
-}
-
-/* eslint-disable-next-line @typescript-eslint/no-unused-vars */
-async function appMessageBroadcastEntityChanged(rpInstance: RustPlusInstance, appEntityChanged: rp.AppEntityChanged) {
-    // TODO! entity changed
 }
 
 /* eslint-disable-next-line @typescript-eslint/no-unused-vars */

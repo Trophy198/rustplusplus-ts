@@ -1,4 +1,7 @@
 {
+    "userTurnedOnOffSmartSwitchFromDiscord": "{user} turned {name} {status} from Discord.",
+    "noCommunicationSmartSwitch": "Could not confirm the state of {name}. Check the server connection and device pairing.",
+    "smartSwitchRefresh": "Refresh state",
     "active": "Active",
     "addedMarkerAt": "Added marker {name} at {pos}.",
     "admins": "Admins",

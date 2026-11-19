@@ -296,6 +296,7 @@ export interface Marker {
 }
 
 export interface SmartSwitchConfig {
+    pairedSteamIds?: types.SteamId[];
     /* From FCM notification */
     entityId: types.EntityId;
     /* Rest */
@@ -1551,11 +1552,15 @@ export function isValidSmartSwitchConfig(object: unknown): object is SmartSwitch
     errors.push(vu.validateInterface('autoSetting', obj.autoSetting, isValidSmartSwitchConfigAutoSetting));
     errors.push(vu.validateType('proximitySetting', obj.proximitySetting, 'number'));
 
+    if (obj.pairedSteamIds !== undefined) {
+        errors.push(vu.validateArrayOfTypes('pairedSteamIds', obj.pairedSteamIds, 'string'));
+    }
+
     const filteredErrors = errors.filter((error): error is vu.ValidationError => error !== null);
 
     const objectKeys = Object.keys(object);
     const missingKeys = validKeys.filter(key => !objectKeys.includes(key));
-    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key) && key !== 'pairedSteamIds');
     const hasAllRequiredKeys = missingKeys.length === 0;
     const hasOnlyValidKeys = unknownKeys.length === 0;
 

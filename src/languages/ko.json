@@ -1,4 +1,9 @@
 {
+    "smartSwitchRefresh": "상태 다시 조회",
+    "buttonOn": "ON",
+    "buttonOff": "OFF",
+    "infoChannelEmbedTeamFieldTitleStatus": "상태",
+    "errorDescMissingPermission": "이 작업을 실행할 권한이 없습니다.",
     "24HoursInGameTimePassed": "게임 시간(24시간)이 확인되었습니다.",
     "abandonedCabins": "버려진 오두막",
     "abandonedMilitaryBase": "버려진 군사기지",

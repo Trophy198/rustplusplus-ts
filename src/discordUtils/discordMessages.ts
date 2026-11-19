@@ -23,7 +23,9 @@ import * as path from 'path';
 import { projectRoot } from '../utils/runtimePaths';
 import * as rp from 'rustplus-ts';
 
-import { log, guildInstanceManager as gim, credentialsManager as cm, localeManager as lm } from '../../index';
+import {
+    log, guildInstanceManager as gim, credentialsManager as cm, localeManager as lm, rustPlusManager as rpm
+} from '../../index';
 import { ConnectionStatus, RustPlusInstance } from '../managers/rustPlusManager';
 import * as constants from '../utils/constants';
 import * as discordButtons from './discordButtons';
@@ -256,38 +258,46 @@ export async function sendServerMessage(dm: DiscordManager, guildId: types.Guild
     }
 }
 
-// TODO! For smart devices, if the device is not responsive, change embed image to a cross or something, change color 
-// to RED, otherwise default color
-export async function sendSmartSwitchMessage(dm: DiscordManager, guildId: types.GuildId, serverId: types.ServerId,
-    entityId: types.EntityId, interaction: discordjs.Interaction | null = null) {
-    const fn = `[sendSmartSwitchMessage]`;
-    const logParam = {
-        guildId: guildId,
-        serverId: serverId
-    };
+// Serialize creation and coalesce edits so a burst of broadcasts leaves one card with the latest value.
+const switchCards = new Map<string, { dirty: boolean; done: Promise<void> }>();
 
-    const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-
-    const serverInfo = gInstance.serverInfoMap[serverId];
-    if (!serverInfo) {
-        log.warn(`${fn} Could not find ServerInfo.`, logParam);
-        return;
+export function sendSmartSwitchMessage(dm: DiscordManager, guildId: types.GuildId, serverId: types.ServerId,
+    entityId: types.EntityId): Promise<void> {
+    const key = JSON.stringify([guildId, serverId, entityId]);
+    const pending = switchCards.get(key);
+    if (pending) {
+        pending.dirty = true;
+        return pending.done;
     }
+    const job = { dirty: true, done: Promise.resolve() };
+    switchCards.set(key, job);
+    job.done = (async () => {
+        try {
+            while (job.dirty) {
+                job.dirty = false;
+                await updateSmartSwitchCard(dm, guildId, serverId, entityId);
+            }
+        } finally {
+            switchCards.delete(key);
+        }
+    })();
+    return job.done;
+}
 
-    const smartSwitchConfig = serverInfo.smartSwitchConfigMap[entityId];
-    if (!smartSwitchConfig) {
-        log.warn(`${fn} Could not find SmartSwitchConfig '${entityId}'.`, logParam);
-        return;
-    }
-
-    // TODO! Check if switch is active via rustplusManager
-    const active = false;
+async function updateSmartSwitchCard(dm: DiscordManager, guildId: types.GuildId, serverId: types.ServerId,
+    entityId: types.EntityId) {
+    const gInstance = gim.getGuildInstance(guildId);
+    const server = gInstance?.serverInfoMap[serverId];
+    const smartSwitchConfig = server?.smartSwitchConfigMap[entityId];
+    if (!gInstance || !server?.active || !smartSwitchConfig) return;
+    const instance = rpm.getInstance(guildId, serverId);
+    const active = instance?.smartSwitchValue(entityId);
 
     const content = {
         embeds: [discordEmbeds.getSmartSwitchEmbed(guildId, serverId, entityId, active)],
         components: [
-            discordSelectMenus.getSmartSwitchSelectMenu(guildId, serverId, entityId),
-            discordButtons.getSmartSwitchButtons(guildId, serverId, entityId, active)
+            discordButtons.getSmartSwitchButtons(guildId, serverId, entityId, active,
+                instance?.connectionStatus === ConnectionStatus.Connected)
         ],
         files: [
             new discordjs.AttachmentBuilder(path.join(__dirname, '..', 'resources', 'images', 'electrics',
@@ -295,11 +305,17 @@ export async function sendSmartSwitchMessage(dm: DiscordManager, guildId: types.
         ]
     };
 
-    const message = await dm.sendUpdateMessage(guildId, content, gInstance.guildChannelIds.smartSwitches,
-        smartSwitchConfig.messageId, interaction);
-
-    if (interaction === null && message instanceof discordjs.Message &&
-        smartSwitchConfig.messageId !== message.id) {
+    const channelId = gInstance.guildChannelIds.smartSwitches;
+    if (!channelId) return;
+    const message = await dm.sendUpdateMessage(guildId, content, channelId, smartSwitchConfig.messageId);
+    if (!message) return;
+    const current = gim.getGuildInstance(guildId)?.serverInfoMap[serverId];
+    if (!current?.active || current.smartSwitchConfigMap[entityId] !== smartSwitchConfig) {
+        // Disconnect/delete may finish while Discord is creating the first card.
+        await dm.deleteMessage(guildId, channelId, message.id);
+        return;
+    }
+    if (smartSwitchConfig.messageId !== message.id) {
         smartSwitchConfig.messageId = message.id;
         gim.updateGuildInstance(guildId);
     }

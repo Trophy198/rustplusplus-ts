@@ -573,7 +573,7 @@ export function getServerEmbed(guildId: types.GuildId, serverId: types.ServerId,
 }
 
 export function getSmartSwitchEmbed(guildId: types.GuildId, serverId: types.ServerId, entityId: types.EntityId,
-    active: boolean): discordjs.EmbedBuilder {
+    active: boolean | undefined): discordjs.EmbedBuilder {
     const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
     const serverInfo = gInstance.serverInfoMap[serverId] as ServerInfo;
     const smartSwitchConfig = serverInfo.smartSwitchConfigMap[entityId] as SmartSwitchConfig;
@@ -581,13 +581,14 @@ export function getSmartSwitchEmbed(guildId: types.GuildId, serverId: types.Serv
 
     return getEmbed({
         title: smartSwitchConfig.name,
-        color: colorHexToNumber(active ? constants.COLOR_ACTIVE : constants.COLOR_INACTIVE),
+        color: colorHexToNumber(active === undefined ? constants.COLOR_GREY :
+            active ? constants.COLOR_ACTIVE : constants.COLOR_INACTIVE),
         description: `**${lm.getIntl(language, 'id')}** \`${entityId}\``,
         thumbnail: { url: `attachment://${smartSwitchConfig.img}` },
         footer: { text: serverInfo.name },
         fields: [{
-            name: lm.getIntl(language, 'customCommand'),
-            value: `\`${gInstance.generalSettings.inGameChatCommandPrefix}${smartSwitchConfig.command}\``,
+            name: lm.getIntl(language, 'infoChannelEmbedTeamFieldTitleStatus'),
+            value: lm.getIntl(language, active === undefined ? 'unknown' : active ? 'buttonOn' : 'buttonOff'),
             inline: true
         }],
         timestamp: new Date()

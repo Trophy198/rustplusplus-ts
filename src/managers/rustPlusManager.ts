@@ -139,6 +139,8 @@ export class RustPlusInstance {
     private generation = 0;
     public get sessionId() { return this.generation; }
     private pollVersion = 0;
+    private switchStates = new Map<types.EntityId, { value: boolean }>();
+    private switchRequests = new Map<types.EntityId, Promise<boolean>>();
     public serverId: types.ServerId;
     public serverName: string;
 
@@ -275,6 +277,8 @@ export class RustPlusInstance {
         ++this.generation;
         this.started = false;
         this.starting = undefined;
+        this.switchStates.clear();
+        this.switchRequests.clear();
         this.rustPlus.removeAllListeners();
         this.clearAllData();
         return this.rustPlus.disconnect();
@@ -289,7 +293,14 @@ export class RustPlusInstance {
             Math.min(this.reconnectTimeoutSeconds * 2, constants.MAX_RECONNECT_TIMEOUT_SECONDS);
         this.lg.info(`Reconnecting in ${this.reconnectTimeoutSeconds} seconds.`);
         this.startReconnectionTimer();
-        if (firstRetry) await sendServerMessage(dm, this.guildId, this.serverId, this.connectionStatus);
+        if (firstRetry) {
+            const server = gim.getGuildInstance(this.guildId)?.serverInfoMap[this.serverId];
+            await Promise.all([
+                sendServerMessage(dm, this.guildId, this.serverId, this.connectionStatus),
+                ...Object.keys(server?.smartSwitchConfigMap ?? {}).map(id =>
+                    discordMessages.sendSmartSwitchMessage(dm, this.guildId, this.serverId, id))
+            ]);
+        }
         await closing;
     }
 
@@ -418,8 +429,6 @@ export class RustPlusInstance {
             if (version !== this.pollVersion) return;
             this.rpTeamInfo.updateTeamInfo(teamInfo);
         }
-
-        // TODO! smartSwitchHandler
 
         // TODO! timeHandler
         await rpInfoHandler.handler(this, info);
@@ -645,6 +654,11 @@ export class RustPlusInstance {
     public async setupRequesting() {
         this.stopServerPollingHandler();
         const version = this.pollVersion;
+        this.switchStates.clear();
+        await Promise.all([this.restoreSmartSwitches(version), this.setupServerPolling(version)]);
+    }
+
+    private async setupServerPolling(version: number) {
         this.rpTeamInfo = null;
         const gInstance = gim.getGuildInstance(this.guildId) as GuildInstance;
         const server = gInstance.serverInfoMap[this.serverId];
@@ -681,23 +695,90 @@ export class RustPlusInstance {
         await discordMessages.sendInformationChannelMapMessage(dm, this, mapPath);
 
         if (version !== this.pollVersion) return;
-        await this.setupSmartDevices();
-        if (version !== this.pollVersion) return;
         const fresh = Date.now() - requestedAt < this.serverPollingHandlerIntervalSeconds * 1000;
         this.startServerPollingHandler(fresh ? info : undefined);
     }
 
-    public async setupSmartDevices() {
+    private async restoreSmartSwitches(version: number) {
+        const server = gim.getGuildInstance(this.guildId)?.serverInfoMap[this.serverId];
+        for (const entityId of Object.keys(server?.smartSwitchConfigMap ?? {})) {
+            if (version !== this.pollVersion) return;
+            await this.requestSmartSwitch(entityId);
+        }
+    }
 
-        // TODO! Go through all smart devices to get the status of them
-        // - Smart Switches, current status
-        // - Smart Alarms, current status
-        // - Storage Monitors, Type, content inside...
-        // - Smart Switch Groups...
+    private switchPairing(entityId: types.EntityId) {
+        const guild = gim.getGuildInstance(this.guildId);
+        const server = guild?.serverInfoMap[this.serverId];
+        const device = server?.smartSwitchConfigMap[entityId];
+        if (this.connectionStatus !== ConnectionStatus.Connected || !server?.active || !server.requesterSteamId ||
+            !device) return;
+        const pairings = guild?.pairingDataMap[this.serverId];
+        // Older configs have no device owner. Use the configured requester until the device is paired again.
+        const owners = device.pairedSteamIds ?? [server.requesterSteamId];
+        const canRequest = (id: string) => pairings?.[id]?.valid && !!cm.getCredentials(id);
+        const requester = this.relaySteamId ?? server.requesterSteamId;
+        const owner = owners.includes(requester) && canRequest(requester) ? requester :
+            this.relaySteamId ? undefined : owners.find(canRequest);
+        return owner ? pairings?.[owner] : undefined;
+    }
 
-        // TODO! Start smart devices handlers
-        // - smartSwitchPollingHandler
+    public smartSwitchValue(entityId: types.EntityId) {
+        return this.switchPairing(entityId) ? this.switchStates.get(entityId)?.value : undefined;
+    }
 
+    public async smartSwitchChanged(entityId: types.EntityId, value: boolean) {
+        if (!this.switchPairing(entityId)) return;
+        const previous = this.switchStates.get(entityId);
+        // Even an identical broadcast supersedes an older in-flight snapshot or write acknowledgement.
+        this.switchStates.set(entityId, { value });
+        if (previous?.value !== value) {
+            await discordMessages.sendSmartSwitchMessage(dm, this.guildId, this.serverId, entityId);
+        }
+    }
+
+    public async requestSmartSwitch(entityId: types.EntityId, desired?: boolean): Promise<boolean> {
+        const version = this.pollVersion;
+        const previous = this.switchRequests.get(entityId);
+        const current = (previous ?? Promise.resolve())
+            .then(() => this.runSwitchRequest(version, entityId, desired))
+            .catch(error => {
+                this.lg.warn(`Smart switch ${entityId} request failed: ${error}`);
+                return false;
+            });
+        this.switchRequests.set(entityId, current);
+        try {
+            return await current;
+        } finally {
+            if (this.switchRequests.get(entityId) === current) this.switchRequests.delete(entityId);
+        }
+    }
+
+    private async runSwitchRequest(version: number, entityId: types.EntityId, desired?: boolean) {
+        if (version !== this.pollVersion) return false;
+        const pairing = this.switchPairing(entityId);
+        const before = this.switchStates.get(entityId);
+        let value: boolean | undefined;
+        if (pairing) {
+            const { steamId, playerToken } = pairing;
+            if (desired === undefined) {
+                const reply = await this.rustPlus.getEntityInfoAsync(steamId, playerToken, entityId);
+                if (rp.isValidAppResponse(reply) && !reply.error &&
+                    reply.entityInfo?.type === rp.AppEntityType.Switch) {
+                    value = reply.entityInfo.payload?.value;
+                }
+            } else if (before) {
+                const reply = await this.rustPlus.setEntityValueAsync(steamId, playerToken, entityId, desired);
+                if (rp.isValidAppResponse(reply) && !reply.error && reply.success) value = desired;
+            }
+        }
+        if (version !== this.pollVersion || pairing !== this.switchPairing(entityId)) return false;
+        if (this.switchStates.get(entityId) === before) {
+            if (value === undefined) this.switchStates.delete(entityId);
+            else this.switchStates.set(entityId, { value });
+        }
+        await discordMessages.sendSmartSwitchMessage(dm, this.guildId, this.serverId, entityId);
+        return value !== undefined;
     }
 
     public async sendEventNotification(setting: keyof EventNotificationSettings, text: string) {

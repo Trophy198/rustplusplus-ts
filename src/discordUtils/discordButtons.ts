@@ -206,30 +206,19 @@ export function getServerButtons(guildId: types.GuildId, serverId: types.ServerI
 }
 
 export function getSmartSwitchButtons(guildId: types.GuildId, serverId: types.ServerId, entityId: types.EntityId,
-    active: boolean): discordjs.ActionRowBuilder<discordjs.ButtonBuilder> {
+    active: boolean | undefined, connected: boolean): discordjs.ActionRowBuilder<discordjs.ButtonBuilder> {
     const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
     const language = gInstance.generalSettings.language;
     const identifier = JSON.stringify([serverId, entityId]);
-
-    return new discordjs.ActionRowBuilder<discordjs.ButtonBuilder>().addComponents(
-        getButton({
-            customId: `SmartSwitch${active ? 'Off' : 'On'}${identifier}`,
-            label: active ? lm.getIntl(language, 'buttonOff') : lm.getIntl(language, 'buttonOn'),
-            style: active ? discordjs.ButtonStyle.Danger : discordjs.ButtonStyle.Success,
-            type: discordjs.ComponentType.Button
-        }),
-        getButton({
-            customId: `SmartSwitchEdit${identifier}`,
-            label: lm.getIntl(language, 'buttonEdit'),
-            style: discordjs.ButtonStyle.Primary,
-            type: discordjs.ComponentType.Button
-        }),
-        getButton({
-            customId: `SmartSwitchDelete${identifier}`,
-            style: discordjs.ButtonStyle.Secondary,
-            emoji: '🗑️',
-            type: discordjs.ComponentType.Button
-        }));
+    const action = active === undefined ? 'Read' : active ? 'Off' : 'On';
+    return new discordjs.ActionRowBuilder<discordjs.ButtonBuilder>().addComponents(getButton({
+        customId: `SmartSwitch${action}${identifier}`,
+        label: lm.getIntl(language, active === undefined ? 'smartSwitchRefresh' : active ? 'buttonOff' : 'buttonOn'),
+        style: active === undefined ? discordjs.ButtonStyle.Secondary :
+            active ? discordjs.ButtonStyle.Danger : discordjs.ButtonStyle.Success,
+        disabled: !connected,
+        type: discordjs.ComponentType.Button
+    }));
 }
 
 export function getSmartAlarmButtons(guildId: types.GuildId, serverId: types.ServerId, entityId: types.EntityId):

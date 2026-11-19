@@ -97,6 +97,36 @@ test('two credentials receive only their subscriptions through replacement, remo
         assert.equal(guild.pairingDataMap[key][accounts[0]].playerToken, 100);
         assert.equal(guild.pairingDataMap[key][accounts[1]].playerToken, 101);
     }
+    const unknownServer = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    const entityId = '18446744073709551615';
+    const pairDevice = (socket, notificationId, owner, entity) => frame(socket, notificationId, 'pair', 'pairing', {
+        type: 'entity', entityType: '1', entityName: 'Smart Switch', id: unknownServer,
+        entityId: entity, playerId: accounts[owner], playerToken: String(100 + owner),
+        name: 'Switch server', desc: '', img: '', logo: '', url: ''
+    });
+    // The first notification may be for the device before anyone pairs the server.
+    pairDevice(first, 'entity-first', 0, entityId);
+    await tick();
+    const key = 'relay-' + unknownServer;
+    for (const guild of guilds) {
+        const device = guild.serverInfoMap[key].smartSwitchConfigMap[entityId];
+        assert.deepEqual(device.pairedSteamIds, [accounts[0]]);
+        device.name = 'My light';
+        device.messageId = 'existing-card';
+    }
+    pairDevice(second, 'entity-second-owner', 1, entityId);
+    pairDevice(second, 'entity-repeat', 1, entityId);
+    pairDevice(first, 'mismatched-owner', 1, '42');
+    pairDevice(first, 'malformed-id', 0, '18446744073709551616');
+    await tick();
+    for (const guild of guilds) {
+        const devices = guild.serverInfoMap[key].smartSwitchConfigMap;
+        assert.deepEqual(Object.keys(devices), [entityId]);
+        assert.deepEqual(devices[entityId].pairedSteamIds, accounts);
+        assert.equal(devices[entityId].name, 'My light');
+        assert.equal(devices[entityId].messageId, 'existing-card');
+        assert.equal(guild.pairingDataMap[key][accounts[1]].playerToken, 101);
+    }
     notify(first, 'shared-id', 'A');
     notify(second, 'shared-id', 'B');
     notify(first, 'shared-id', 'duplicate');

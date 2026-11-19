@@ -20,7 +20,8 @@
 
 import * as discordjs from 'discord.js';
 
-import { guildInstanceManager as gim, rustPlusManager as rpm } from '../../index';
+import { isUint64String } from 'rustplus-ts';
+import { guildInstanceManager as gim, rustPlusManager as rpm, localeManager as lm } from '../../index';
 import { ConnectionStatus } from '../managers/rustPlusManager';
 import { DiscordManager } from "../managers/discordManager";
 import * as types from '../utils/types';
@@ -30,6 +31,10 @@ import * as discordModals from '../discordUtils/discordModals';
 
 export async function buttonHandler(dm: DiscordManager, interaction: discordjs.ButtonInteraction):
     Promise<boolean> {
+    const switchAction = /^(SmartSwitchOn|SmartSwitchOff|SmartSwitchRead)(\[.*\])$/.exec(interaction.customId);
+    if (switchAction) {
+        return handleSmartSwitch(dm, interaction, switchAction[1], switchAction[2]);
+    }
     /* GeneralSettings / EventNotificationSettings */
     if (interaction.customId === 'GeneralSetting-inGameChatFunctionalityEnabled') {
         return await inGameChatFunctionalityEnabledButtonHandler(dm, interaction);
@@ -107,6 +112,45 @@ export async function buttonHandler(dm: DiscordManager, interaction: discordjs.B
     return false;
 }
 
+
+async function handleSmartSwitch(dm: DiscordManager, interaction: discordjs.ButtonInteraction, action: string,
+    identifier: string): Promise<boolean> {
+    await interaction.deferUpdate();
+    const guildId = interaction.guildId;
+    if (!guildId) return false;
+    const guild = gim.getGuildInstance(guildId);
+    if (!guild) return false;
+    const language = guild.generalSettings.language;
+    if (!dm.validPermissions(interaction)) {
+        await interaction.followUp({ content: lm.getIntl(language, 'errorDescMissingPermission'),
+            flags: discordjs.MessageFlags.Ephemeral });
+        return false;
+    }
+
+    let ids: unknown;
+    try { ids = JSON.parse(identifier); } catch { return false; }
+    if (!Array.isArray(ids) || ids.length !== 2 || typeof ids[0] !== 'string' || !isUint64String(ids[1])) return false;
+    const [serverId, entityId] = ids;
+    const device = guild.serverInfoMap[serverId]?.smartSwitchConfigMap?.[entityId];
+    const instance = rpm.getInstance(guildId, serverId);
+    const desired = action === 'SmartSwitchRead' ? undefined : action === 'SmartSwitchOn';
+    if (device?.messageId === interaction.message.id && instance?.connectionStatus === ConnectionStatus.Connected) {
+        const before = instance.smartSwitchValue(entityId);
+        if (await instance.requestSmartSwitch(entityId, desired)) {
+            if (guild.generalSettings.inGameChatNotifySmartSwitchChangedFromDiscord &&
+                desired !== undefined && before !== desired) {
+                const status = lm.getIntl(language, desired ? 'buttonOn' : 'buttonOff');
+                instance.inGameTeamChatQueueMessage(lm.getIntl(language, 'userTurnedOnOffSmartSwitchFromDiscord', {
+                    user: interaction.user.username, name: device.name, status
+                }));
+            }
+            return true;
+        }
+    }
+    const content = lm.getIntl(language, 'noCommunicationSmartSwitch', { name: device?.name ?? entityId });
+    await interaction.followUp({ content, flags: discordjs.MessageFlags.Ephemeral, allowedMentions: { parse: [] } });
+    return false;
+}
 
 /**
  * General Settings / Event Notification Settings
@@ -414,6 +458,7 @@ async function serverConnectingDisconnectReconnectingButtonHandler(dm: DiscordMa
         // TODO! Remove embeds from information channel if serverToView === null
     }
 
+    server.active = false;
     const deletionPromises: Promise<boolean>[] = [];
     for (const content of Object.values(server.smartSwitchConfigMap)) {
         const channelId = gInstance.guildChannelIds.smartSwitches;
@@ -448,7 +493,6 @@ async function serverConnectingDisconnectReconnectingButtonHandler(dm: DiscordMa
     }
     await Promise.allSettled(deletionPromises);
 
-    server.active = false;
     gim.updateGuildInstance(guildId);
 
     rpm.removeInstance(guildId, serverId);
@@ -489,10 +533,6 @@ async function serverConnectButtonHandler(dm: DiscordManager, interaction: disco
     }
 
     const creationPromises: Promise<void>[] = [];
-    for (const content of Object.values(server.smartSwitchConfigMap)) {
-        creationPromises.push(discordMessages.sendSmartSwitchMessage(dm, guildId, serverId, content.entityId));
-    }
-
     for (const content of Object.values(server.smartAlarmConfigMap)) {
         creationPromises.push(discordMessages.sendSmartAlarmMessage(dm, guildId, serverId, content.entityId));
     }
@@ -572,6 +612,7 @@ async function serverDeleteButtonHandler(dm: DiscordManager, interaction: discor
 
     interaction.deferUpdate();
 
+    server.active = false;
     rpm.removeInstance(guildId, serverId);
 
     const deletionPromises: Promise<boolean>[] = [];
