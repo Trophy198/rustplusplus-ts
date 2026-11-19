@@ -23,9 +23,16 @@ test('two credentials receive only their subscriptions through replacement, remo
         serverInfoMap: {}, pairingDataMap: {}, serverToView: null
     }));
     const sent = [];
+    const alarmPosts = [];
     const dm = {
         getGuildIdsForUser: async () => ['0', '1'],
-        sendUpdateMessage: async (guild, content, channel) => sent.push([channel, content.embeds[0].data.description])
+        sendUpdateMessage: async (guild, content, channel) => {
+            if (content.enforceNonce) {
+                alarmPosts.push([guild, channel, content.embeds[0].data.description]);
+                return { id: String(alarmPosts.length) };
+            }
+            return sent.push([channel, content.embeds[0].data.description]);
+        }
     };
     const index = require.resolve('../index.ts');
     // Everything between the two I/O boundaries uses the actual receiver and the bot's dispatch code.
@@ -69,12 +76,13 @@ test('two credentials receive only their subscriptions through replacement, remo
         socket.emit('data', Buffer.from([kMCSVersion, kLoginResponseTag, 0]));
         return socket;
     }
-    function frame(socket, persistentId, message, channelId, body) {
+    function frame(socket, persistentId, message, channelId, body, timestamp = Date.now(), ttl = 60,
+        id = persistentId) {
         const appData = Object.entries({ channelId, title: 'news', message, body: JSON.stringify(body) })
             .map(([key, value]) => ({ key, value }));
         const bytes = data.encodeDelimited({
-            from: 'rust', category: 'rust', id: persistentId, token: 'fixture', appData, persistentId,
-            ttl: 60, sent: Date.now()
+            from: 'rust', category: 'rust', id, token: 'fixture', appData, persistentId,
+            ttl, sent: timestamp
         }).finish();
         socket.emit('data', Buffer.concat([Buffer.from([kDataMessageStanzaTag]), bytes]));
     }
@@ -134,6 +142,27 @@ test('two credentials receive only their subscriptions through replacement, remo
     await tick();
     assert.deepEqual(sent, [['channel0', 'A'], ['channel1', 'B']]);
 
+    const alarm = { type: 'entity', entityType: '2', entityName: 'Smart Alarm', entityId, id,
+        name: 'Server', desc: '', img: '', logo: '', url: '' };
+    for (const [i, socket] of [first, second].entries()) {
+        frame(socket, 'alarm-pair-' + i, 'pair', 'pairing', {
+            ...alarm, playerId: accounts[i], playerToken: String(100 + i)
+        });
+    }
+    await tick();
+    // Only guild 0 opts into notifications from this inactive server.
+    guilds[0].generalSettings.fcmAlarmNotify = true;
+    const alarmAt = Date.now() - 15000;
+    const trigger = { id, entityId, type: 'alarm' };
+    frame(second, 'alarm-b', 'pulse', 'alarm', trigger, alarmAt);
+    frame(first, 'alarm-a', 'pulse', 'alarm', trigger, alarmAt + 10);
+    frame(first, 'expired', 'expired', 'alarm', trigger, alarmAt, 1);
+    await tick();
+    assert.deepEqual(alarmPosts, [['0', 'channel0', 'pulse']]);
+    const device = guilds[0].serverInfoMap['relay-' + id].smartAlarmConfigMap[entityId];
+    assert.deepEqual(device.pairedSteamIds, accounts);
+    assert.equal(device.lastTrigger, Math.floor(alarmAt / 1000));
+
     // Exercise the receiver's own retry after losing A's TLS stream.
     sockets.delete('1000000000');
     t.mock.timers.enable({ apis: ['setTimeout'] });
@@ -145,6 +174,11 @@ test('two credentials receive only their subscriptions through replacement, remo
     assert.equal(first.eventNames().length, 0);
     assert.equal(second.listenerCount('data'), 1);
     assert.equal(retried.listenerCount('data'), 1);
+    frame(retried, 'alarm-a', 'pulse', 'alarm', trigger, alarmAt + 10);
+    frame(retried, 'new-transport-id', 'pulse', 'alarm', trigger, alarmAt + 10, 60, 'alarm-a');
+    frame(second, 'second-pulse', 'pulse', 'alarm', trigger);
+    await tick();
+    assert.equal(alarmPosts.length, 2);
     notify(retried, 'retried', 'reconnected A');
     await tick();
     assert.deepEqual(sent.pop(), ['channel0', 'reconnected A']);

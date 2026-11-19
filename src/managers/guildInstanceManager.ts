@@ -322,6 +322,7 @@ export enum SmartSwitchConfigAutoSetting {
 }
 
 export interface SmartAlarmConfig {
+    pairedSteamIds?: types.SteamId[];
     /* From FCM notification */
     entityId: types.EntityId;
     /* Rest */
@@ -470,6 +471,17 @@ export class GuildInstanceManager {
             log.warn(`GuildInstance file failed parsing. Data: ${guildInstanceFileContent}, ${error}`,
                 { guildId: guildId });
             return ReadError.ParseFailed;
+        }
+
+        // Earlier guild files accepted a string for lastTrigger. Discord uses Unix seconds.
+        for (const server of Object.values(guildInstanceFileContentParsed?.serverInfoMap ?? {})) {
+            for (const alarm of Object.values(server?.smartAlarmConfigMap ?? {})) {
+                if (typeof alarm?.lastTrigger === 'string') {
+                    const stored = String(alarm.lastTrigger);
+                    const seconds = /^\d+$/.test(stored) ? Number(stored) : Math.floor(Date.parse(stored) / 1000);
+                    alarm.lastTrigger = Number.isSafeInteger(seconds) ? seconds : null;
+                }
+            }
         }
 
         if (!isValidGuildInstance(guildInstanceFileContentParsed)) {
@@ -1603,14 +1615,18 @@ export function isValidSmartAlarmConfig(object: unknown): object is SmartAlarmCo
     errors.push(vu.validateType('img', obj.img, 'string'));
     errors.push(vu.validateType('everyone', obj.everyone, 'boolean'));
     errors.push(vu.validateType('inGame', obj.inGame, 'boolean'));
-    errors.push(vu.validateType('lastTrigger', obj.lastTrigger, 'string', null));
+    errors.push(vu.validateType('lastTrigger', obj.lastTrigger, 'number', null));
     errors.push(vu.validateType('message', obj.message, 'string'));
+
+    if (obj.pairedSteamIds !== undefined) {
+        errors.push(vu.validateArrayOfTypes('pairedSteamIds', obj.pairedSteamIds, 'string'));
+    }
 
     const filteredErrors = errors.filter((error): error is vu.ValidationError => error !== null);
 
     const objectKeys = Object.keys(object);
     const missingKeys = validKeys.filter(key => !objectKeys.includes(key));
-    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key) && key !== 'pairedSteamIds');
     const hasAllRequiredKeys = missingKeys.length === 0;
     const hasOnlyValidKeys = unknownKeys.length === 0;
 

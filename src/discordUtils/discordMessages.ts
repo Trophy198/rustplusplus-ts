@@ -259,26 +259,30 @@ export async function sendServerMessage(dm: DiscordManager, guildId: types.Guild
 }
 
 // Serialize creation and coalesce edits so a burst of broadcasts leaves one card with the latest value.
-const switchCards = new Map<string, { dirty: boolean; done: Promise<void> }>();
+const deviceCards = new Map<string, { dirty: boolean; done: Promise<void> }>();
 
 export function sendSmartSwitchMessage(dm: DiscordManager, guildId: types.GuildId, serverId: types.ServerId,
     entityId: types.EntityId): Promise<void> {
-    const key = JSON.stringify([guildId, serverId, entityId]);
-    const pending = switchCards.get(key);
+    return queueDeviceCard(JSON.stringify(['switch', guildId, serverId, entityId]),
+        () => updateSmartSwitchCard(dm, guildId, serverId, entityId));
+}
+
+function queueDeviceCard(key: string, update: () => Promise<void>) {
+    const pending = deviceCards.get(key);
     if (pending) {
         pending.dirty = true;
         return pending.done;
     }
     const job = { dirty: true, done: Promise.resolve() };
-    switchCards.set(key, job);
+    deviceCards.set(key, job);
     job.done = (async () => {
         try {
             while (job.dirty) {
                 job.dirty = false;
-                await updateSmartSwitchCard(dm, guildId, serverId, entityId);
+                await update();
             }
         } finally {
-            switchCards.delete(key);
+            deviceCards.delete(key);
         }
     })();
     return job.done;
@@ -321,50 +325,31 @@ async function updateSmartSwitchCard(dm: DiscordManager, guildId: types.GuildId,
     }
 }
 
-export async function sendSmartAlarmMessage(dm: DiscordManager, guildId: types.GuildId, serverId: types.ServerId,
-    entityId: types.EntityId, interaction: discordjs.Interaction | null = null) {
-    const fn = `[sendSmartAlarmMessage]`;
-    const logParam = {
-        guildId: guildId,
-        serverId: serverId
-    };
-
-    const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-
-    const serverInfo = gInstance.serverInfoMap[serverId];
-    if (!serverInfo) {
-        log.warn(`${fn} Could not find ServerInfo.`, logParam);
-        return;
-    }
-
-    const smartAlarmConfig = serverInfo.smartAlarmConfigMap[entityId];
-    if (!smartAlarmConfig) {
-        log.warn(`${fn} Could not find SmartAlarmConfig '${entityId}'.`, logParam);
-        return;
-    }
-
-    // TODO! Check if alarm is active via rustplusManager
-    const active = false;
-
-    const content = {
-        embeds: [discordEmbeds.getSmartAlarmEmbed(guildId, serverId, entityId, active)],
-        components: [
-            discordButtons.getSmartAlarmButtons(guildId, serverId, entityId)
-        ],
-        files: [
-            new discordjs.AttachmentBuilder(path.join(__dirname, '..', 'resources', 'images', 'electrics',
-                smartAlarmConfig.img))
-        ]
-    };
-
-    const message = await dm.sendUpdateMessage(guildId, content, gInstance.guildChannelIds.smartAlarms,
-        smartAlarmConfig.messageId, interaction);
-
-    if (interaction === null && message instanceof discordjs.Message &&
-        smartAlarmConfig.messageId !== message.id) {
-        smartAlarmConfig.messageId = message.id;
-        gim.updateGuildInstance(guildId);
-    }
+export function sendSmartAlarmMessage(dm: DiscordManager, guildId: types.GuildId, serverId: types.ServerId,
+    entityId: types.EntityId) {
+    return queueDeviceCard(JSON.stringify(['alarm', guildId, serverId, entityId]), async () => {
+        const guild = gim.getGuildInstance(guildId);
+        const server = guild?.serverInfoMap[serverId];
+        const device = server?.smartAlarmConfigMap[entityId];
+        const channelId = guild?.guildChannelIds.smartAlarms;
+        if (!server?.active || !device || !channelId) return;
+        const value = rpm.getInstance(guildId, serverId)?.smartAlarmValue(entityId);
+        const content = {
+            embeds: [discordEmbeds.getSmartAlarmEmbed(guildId, serverId, entityId, value)],
+            components: [discordButtons.getSmartAlarmButtons(guildId, serverId, entityId)],
+            files: [new discordjs.AttachmentBuilder(path.join(__dirname, '..', 'resources', 'images', 'electrics',
+                device.img))]
+        };
+        const message = await dm.sendUpdateMessage(guildId, content, channelId, device.messageId);
+        if (!message) return;
+        const current = gim.getGuildInstance(guildId)?.serverInfoMap[serverId];
+        if (!current?.active || current.smartAlarmConfigMap[entityId] !== device) {
+            await dm.deleteMessage(guildId, channelId, message.id);
+        } else if (device.messageId !== message.id) {
+            device.messageId = message.id;
+            gim.updateGuildInstance(guildId);
+        }
+    });
 }
 
 export async function sendStorageMonitorMessage(dm: DiscordManager, guildId: types.GuildId, serverId: types.ServerId,
@@ -506,28 +491,17 @@ export async function sendInformationChannelTeamMessage(dm: DiscordManager, rpIn
  * Notifications based messages
  */
 
-export async function sendFcmAlarmTriggerMessage(dm: DiscordManager, guildId: types.GuildId, serverId: types.ServerId,
-    title: string, message: string) {
-    const fn = `[sendFcmAlarmTriggerMessage]`;
-    const logParam = {
-        guildId: guildId,
-        serverId: serverId
-    };
-
-    const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-
-    const serverInfo = gInstance.serverInfoMap[serverId];
-    if (!serverInfo) {
-        log.warn(`${fn} Could not find ServerInfo.`, logParam);
-        return;
-    }
-
-    const content = {
+export async function sendSmartAlarmNotification(dm: DiscordManager, guildId: string, serverId: string,
+    title: string, message: string, everyone: boolean, nonce: string) {
+    const guild = gim.getGuildInstance(guildId);
+    if (!guild?.guildChannelIds.activity) return false;
+    const content: discordjs.MessageCreateOptions = {
         embeds: [discordEmbeds.getFcmAlarmTriggerEmbed(guildId, serverId, title, message)],
-        content: gInstance.generalSettings.fcmAlarmNotifyEveryone ? '@everyone' : ''
-    }
-
-    await dm.sendUpdateMessage(guildId, content, gInstance.guildChannelIds.activity);
+        content: everyone ? '@everyone' : '',
+        allowedMentions: { parse: everyone ? ['everyone'] : [] },
+        nonce, enforceNonce: true
+    };
+    return !!await dm.sendUpdateMessage(guildId, content, guild.guildChannelIds.activity);
 }
 
 export async function sendFcmAlarmPluginTriggerMessage(dm: DiscordManager, guildId: types.GuildId,

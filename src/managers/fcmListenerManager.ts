@@ -20,6 +20,7 @@
 
 /* eslint-disable-next-line @typescript-eslint/no-require-imports */
 const PushReceiverClient = require('@liamcottle/push-receiver/src/client');
+import { deliverSmartAlarm } from '../handlers/smartAlarmHandler';
 import { pairingServerKey } from '../utils/rustRelay';
 import { isUint64String } from 'rustplus-ts';
 import { z } from 'zod';
@@ -186,12 +187,10 @@ export type PairingEntityBody = z.infer<typeof PairingEntityBodySchema>;
 
 export const AlarmAlarmBodySchema = z.object({
     ...addressFields,
-    name: z.string(),
-    desc: z.string(),
-    img: z.string(),
-    logo: z.string(),
-    url: z.string(),
-    type: z.string(),
+    entityId: z.union([z.string().refine(isUint64String), z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)])
+        .transform(String).optional(),
+    playerId: z.string().optional(),
+    type: z.literal('alarm')
 }).refine(hasServerAddress).describe('AlarmAlarmBody');
 export type AlarmAlarmBody = z.infer<typeof AlarmAlarmBodySchema>;
 
@@ -287,11 +286,6 @@ export class FcmListenerManager {
                 return;
             }
 
-            if ((Date.now() - parseInt((data as FcmNotification).sent)) > NOTIFICATION_EXPIRATION_TIME_MS) {
-                log.warn(`${fn} data have expired '${(data as FcmNotification).sent}'.`, logParam);
-                return;
-            }
-
             void this.onDataReceived(steamId, data).catch(() => {
                 log.warn(`${fn} Could not process notification.`, logParam);
             });
@@ -324,18 +318,8 @@ export class FcmListenerManager {
 
         const appData: AppDataItem[] = data.appData;
 
-        const title = appData.find(item => item.key === 'title')?.value;
-        if (!title) {
-            log.warn(`${fn} title not found. Data: ${JSON.stringify(data)}`, logParam);
-            return;
-        }
-
-        const message = appData.find(item => item.key === 'message')?.value;
-        if (!message) {
-            log.warn(`${fn} message not found. Data: ${JSON.stringify(data)}`, logParam);
-            return;
-        }
-
+        const title = appData.find(item => item.key === 'title')?.value ?? '';
+        const message = appData.find(item => item.key === 'message')?.value ?? '';
         const channelId = appData.find(item => item.key === 'channelId')?.value;
         if (!vu.isValidObject(channelId, ChannelIdsSchema)) {
             log.warn(`${fn} channelId '${channelId}' not found. Data: ${JSON.stringify(data)}`, logParam);
@@ -348,6 +332,11 @@ export class FcmListenerManager {
             return;
         }
         const body = JSON.parse(bodyObject.value);
+
+        const standardAlarm = channelId === ChannelIds.ALARM && body?.type === AlarmTypes.ALARM;
+        const maxAge = standardAlarm && data.ttl > 0 ? data.ttl * 1000 : NOTIFICATION_EXPIRATION_TIME_MS;
+        if (!Number.isFinite(Number(data.sent)) || Date.now() - Number(data.sent) > maxAge) return;
+        if (!standardAlarm && (!title || !message)) return;
 
         switch (channelId) {
             case ChannelIds.PAIRING: {
@@ -374,7 +363,7 @@ export class FcmListenerManager {
                                     `${PairingEntityNames.SMART_ALARM}`, logParam);
                                 if (!vu.isValidObject(body, PairingEntityBodySchema)) return;
 
-                                pairingEntitySmartAlarm(this, steamId, body);
+                                await pairingServer(this, steamId, body);
                             } break;
 
                             case PairingEntityTypes.STORAGE_MONITOR: {
@@ -403,9 +392,9 @@ export class FcmListenerManager {
                 switch (body.type) {
                     case AlarmTypes.ALARM: {
                         log.info(`${fn} ${ChannelIds.ALARM}: ${AlarmTypes.ALARM}`, logParam);
-                        if (!vu.isValidObject(body, AlarmAlarmBodySchema)) return;
-
-                        alarmAlarm(this, steamId, title, message, body);
+                        const parsed = AlarmAlarmBodySchema.safeParse(body);
+                        if (!parsed.success) return;
+                        await alarmAlarm(this, steamId, title, message, parsed.data, data);
                     } break;
 
                     default: {
@@ -497,12 +486,12 @@ async function pairingServer(flm: FcmListenerManager, steamId: types.SteamId,
     for (const guildId of associatedGuilds) {
         const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
         const serverId = pairingServerKey(gInstance.serverInfoMap, body);
-        const switchBody = 'entityId' in body ? body : undefined;
+        const entity = 'entityId' in body ? body : undefined;
         const newServer = !gInstance.serverInfoMap[serverId];
-        if (newServer || !switchBody) {
+        if (newServer || !entity) {
             let image = constants.DEFAULT_SERVER_IMAGE;
             let logo = constants.DEFAULT_SERVER_IMAGE;
-            if (!switchBody) {
+            if (!entity) {
                 const imageUrl = encodeURI(decodeURI(body.img));
                 const logoUrl = encodeURI(decodeURI(body.logo));
                 if (await vu.isValidImageUrl(imageUrl)) image = imageUrl;
@@ -512,14 +501,19 @@ async function pairingServer(flm: FcmListenerManager, steamId: types.SteamId,
         }
 
         const server = gInstance.serverInfoMap[serverId];
-        if (switchBody) {
-            const entityId = switchBody.entityId;
-            const device = server.smartSwitchConfigMap[entityId] ??= {
-                entityId, messageId: null, pairedDate: 0,
-                name: lm.getIntl(gInstance.generalSettings.language, 'smartSwitch'),
-                command: entityId, img: 'smart_switch.png', autoSetting: SmartSwitchConfigAutoSetting.Off,
-                proximitySetting: constants.PROXIMITY_SETTING_DEFAULT_METERS
-            };
+        if (entity) {
+            const entityId = entity.entityId;
+            const language = gInstance.generalSettings.language;
+            const device = entity.entityType === PairingEntityTypes.SMART_ALARM ?
+                (server.smartAlarmConfigMap[entityId] ??= {
+                    entityId, messageId: null, pairedDate: 0, name: lm.getIntl(language, 'smartAlarm'),
+                    command: entityId, img: 'smart_alarm.png', everyone: false, inGame: false, lastTrigger: null,
+                    message: lm.getIntl(language, 'yourBaseIsUnderAttack')
+                }) : (server.smartSwitchConfigMap[entityId] ??= {
+                    entityId, messageId: null, pairedDate: 0, name: lm.getIntl(language, 'smartSwitch'),
+                    command: entityId, img: 'smart_switch.png', autoSetting: SmartSwitchConfigAutoSetting.Off,
+                    proximitySetting: constants.PROXIMITY_SETTING_DEFAULT_METERS
+                });
             device.pairedDate = Math.floor(Date.now() / 1000);
             device.pairedSteamIds ??= [];
             if (!device.pairedSteamIds.includes(steamId)) device.pairedSteamIds.push(steamId);
@@ -530,12 +524,13 @@ async function pairingServer(flm: FcmListenerManager, steamId: types.SteamId,
         gim.updateGuildInstance(guildId);
 
         const instance = rpm.getInstance(guildId, serverId);
-        if (newServer || !switchBody) {
+        if (newServer || !entity) {
             await discordMessages.sendServerMessage(flm.dm, guildId, serverId,
                 instance?.connectionStatus ?? ConnectionStatus.Disconnected);
         }
-        if (switchBody && server.active && instance) {
-            await instance.requestSmartSwitch(switchBody.entityId);
+        if (entity && server.active && instance) {
+            if (entity.entityType === PairingEntityTypes.SMART_ALARM) await instance.refreshSmartAlarm(entity.entityId);
+            else await instance.requestSmartSwitch(entity.entityId);
         }
     }
 }
@@ -577,56 +572,6 @@ function storePairedServer(gInstance: GuildInstance, serverId: types.ServerId, b
         dayDurationSeconds: previous ? previous.dayDurationSeconds : null,
         nightDurationSeconds: previous ? previous.nightDurationSeconds : null
     };
-}
-
-async function pairingEntitySmartAlarm(flm: FcmListenerManager, steamId: types.SteamId, body: PairingEntityBody) {
-    const fn = `[${flm.constructor.name}: pairingEntitySmartAlarm]`;
-    const logParam = { steamId: steamId };
-
-    const credentials = cm.getCredentials(steamId);
-
-    if (!credentials) {
-        log.warn(`${fn} Could not find Credentials.`, logParam);
-        return;
-    }
-
-    const associatedGuilds = await dm.getGuildIdsForUser(credentials.discordUserId);
-    for (const guildId of associatedGuilds) {
-        const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-        const language = gInstance.generalSettings.language;
-
-        const serverId = pairingServerKey(gInstance.serverInfoMap, body);
-        const serverInfo = gInstance.serverInfoMap[serverId];
-        if (!serverInfo) {
-            log.warn(`${fn} Could not find server.`, { guildId: guildId, serverId: serverId, steamId: steamId });
-            continue;
-        }
-
-        const smartAlarmConfigMap = serverInfo.smartAlarmConfigMap;
-        const exist = body.entityId in smartAlarmConfigMap;
-        smartAlarmConfigMap[body.entityId] = {
-            entityId: body.entityId,
-            messageId: exist ? smartAlarmConfigMap[body.entityId].messageId : null,
-            pairedDate: Math.floor(Date.now() / 1000),
-            name: exist ? smartAlarmConfigMap[body.entityId].name : lm.getIntl(language, 'smartAlarm'),
-            command: exist ? smartAlarmConfigMap[body.entityId].command : body.entityId,
-            img: exist ? smartAlarmConfigMap[body.entityId].img : 'smart_alarm.png',
-            everyone: exist ? smartAlarmConfigMap[body.entityId].everyone : false,
-            inGame: exist ? smartAlarmConfigMap[body.entityId].inGame : false,
-            lastTrigger: exist ? smartAlarmConfigMap[body.entityId].lastTrigger : null,
-            message: exist ? smartAlarmConfigMap[body.entityId].message : lm.getIntl(language, 'yourBaseIsUnderAttack')
-        };
-
-        updatePairingDetails(gInstance, serverId, steamId, body);
-        gim.updateGuildInstance(guildId);
-
-        // TODO! Add the alarm to rustplusManager
-
-        const rpInstance = rpm.getInstance(guildId, serverId);
-        if (rpInstance && serverInfo.active) {
-            await discordMessages.sendSmartAlarmMessage(flm.dm, guildId, serverId, body.entityId);
-        }
-    }
 }
 
 async function pairingEntityStorageMonitor(flm: FcmListenerManager, steamId: types.SteamId, body: PairingEntityBody) {
@@ -678,45 +623,31 @@ async function pairingEntityStorageMonitor(flm: FcmListenerManager, steamId: typ
 }
 
 async function alarmAlarm(flm: FcmListenerManager, steamId: types.SteamId, title: string, message: string,
-    body: AlarmAlarmBody) {
-    /* Unfortunately the alarm notification from the fcm listener is unreliable. The notification does not include
-    which entityId that got triggered which makes it impossible to know which Smart Alarms are still being used
-    actively. Also, from testing it seems that notifications don't always reach this fcm listener which makes it even
-    more unreliable. The only advantage to using the fcm listener alarm notification is that it includes the title and
-    description message that is configured on the Smart Alarm in the game. Due to missing out on this data, Smart Alarm
-    title and description message needs to be re-configured via the alarm edit modal. Alarms that are used on the
-    connected rust server will be handled through the message event from rustplus. Smart Alarms that are still attached
-    to the credential owner and which is not part of the currently connected rust server can notify IF the general
-    setting fcmAlarmNotificationEnabled is enabled. Those notifications will be handled here. */
-
-    const fn = `[${flm.constructor.name}: alarmAlarm]`;
-    const logParam = { steamId: steamId };
-
+    body: AlarmAlarmBody, data: FcmNotification) {
     const credentials = cm.getCredentials(steamId);
+    if (!credentials || (body.playerId && body.playerId !== steamId)) return;
+    const guilds = await dm.getGuildIdsForUser(credentials.discordUserId);
+    for (const guildId of guilds) {
+        const guild = gim.getGuildInstance(guildId);
+        if (!guild) continue;
+        const serverId = pairingServerKey(guild.serverInfoMap, body);
+        const server = guild.serverInfoMap[serverId];
+        if (!server || !guild.pairingDataMap[serverId]?.[steamId]) continue;
 
-    if (!credentials) {
-        log.warn(`${fn} Could not find Credentials.`, logParam);
-        return;
-    }
+        const ownersAlarms = Object.values(server.smartAlarmConfigMap).filter(device =>
+            device.pairedSteamIds?.includes(steamId) ?? true).map(device => device.entityId);
+        const entityId = body.entityId;
+        if (entityId && server.smartAlarmConfigMap[entityId] && !ownersAlarms.includes(entityId)) continue;
+        const paired = entityId ? ownersAlarms.includes(entityId) : ownersAlarms.length > 0;
+        if (!(server.active && paired) && !guild.generalSettings.fcmAlarmNotify) continue;
 
-    log.info(`${fn} alarmAlarm: ${title}: ${message}`, logParam);
-
-    const associatedGuilds = await dm.getGuildIdsForUser(credentials.discordUserId);
-    for (const guildId of associatedGuilds) {
-        const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-
-        const serverId = pairingServerKey(gInstance.serverInfoMap, body);
-        const serverInfo = gInstance.serverInfoMap[serverId];
-        if (!serverInfo) {
-            log.warn(`${fn} Could not find server.`, { guildId: guildId, serverId: serverId, steamId: steamId });
-            continue;
-        }
-
-        const rpInstance = rpm.getInstance(guildId, serverId);
-        if (!rpInstance && !serverInfo.active && steamId === serverInfo.requesterSteamId &&
-            gInstance.generalSettings.fcmAlarmNotify) {
-            await discordMessages.sendFcmAlarmTriggerMessage(flm.dm, guildId, serverId, title, message);
-        }
+        const device = entityId ? server.smartAlarmConfigMap[entityId] : undefined;
+        await deliverSmartAlarm(flm.dm, guildId, serverId, {
+            source: steamId, deliveryId: data.persistentId || data.id, messageId: data.id, time: Number(data.sent),
+            entityId, candidates: entityId ? [entityId] : ownersAlarms,
+            title: title || device?.name || lm.getIntl(guild.generalSettings.language, 'smartAlarm'),
+            message: message || device?.message || ''
+        });
     }
 }
 

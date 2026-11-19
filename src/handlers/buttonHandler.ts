@@ -533,10 +533,6 @@ async function serverConnectButtonHandler(dm: DiscordManager, interaction: disco
     }
 
     const creationPromises: Promise<void>[] = [];
-    for (const content of Object.values(server.smartAlarmConfigMap)) {
-        creationPromises.push(discordMessages.sendSmartAlarmMessage(dm, guildId, serverId, content.entityId));
-    }
-
     for (const content of Object.values(server.storageMonitorConfigMap)) {
         creationPromises.push(discordMessages.sendStorageMonitorMessage(dm, guildId, serverId, content.entityId));
     }

@@ -596,7 +596,7 @@ export function getSmartSwitchEmbed(guildId: types.GuildId, serverId: types.Serv
 }
 
 export function getSmartAlarmEmbed(guildId: types.GuildId, serverId: types.ServerId, entityId: types.EntityId,
-    active: boolean): discordjs.EmbedBuilder {
+    active: boolean | undefined): discordjs.EmbedBuilder {
     const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
     const serverInfo = gInstance.serverInfoMap[serverId] as ServerInfo;
     const smartAlarmConfig = serverInfo.smartAlarmConfigMap[entityId] as SmartAlarmConfig;
@@ -605,13 +605,12 @@ export function getSmartAlarmEmbed(guildId: types.GuildId, serverId: types.Serve
     let description = `**${lm.getIntl(language, 'id')}** \`${entityId}\`\n`;
     description += `**${lm.getIntl(language, 'lastTrigger')}:** `;
 
-    if (smartAlarmConfig.lastTrigger !== null) {
-        description += discordjs.time(smartAlarmConfig.lastTrigger, 'R');
-    }
+    description += smartAlarmConfig.lastTrigger === null ? '—' : discordjs.time(smartAlarmConfig.lastTrigger, 'R');
 
     return getEmbed({
         title: smartAlarmConfig.name,
-        color: colorHexToNumber(active ? constants.COLOR_ACTIVE : constants.COLOR_DEFAULT),
+        color: colorHexToNumber(active === undefined ? constants.COLOR_GREY :
+            active ? constants.COLOR_ACTIVE : constants.COLOR_INACTIVE),
         description: description,
         thumbnail: { url: `attachment://${smartAlarmConfig.img}` },
         footer: { text: serverInfo.name },
@@ -620,8 +619,8 @@ export function getSmartAlarmEmbed(guildId: types.GuildId, serverId: types.Serve
             value: `\`${smartAlarmConfig.message}\``,
             inline: true
         }, {
-            name: lm.getIntl(language, 'customCommand'),
-            value: `\`${gInstance.generalSettings.inGameChatCommandPrefix}${smartAlarmConfig.command}\``,
+            name: lm.getIntl(language, 'infoChannelEmbedTeamFieldTitleStatus'),
+            value: lm.getIntl(language, active === undefined ? 'unknown' : active ? 'buttonOn' : 'buttonOff'),
             inline: false
         }],
         timestamp: new Date()
