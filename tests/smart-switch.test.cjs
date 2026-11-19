@@ -24,7 +24,7 @@ const app = { log, discordManager: dm, config: { general: { serverPollingHandler
     guildInstanceManager: { getGuildInstance: id => guilds.get(id), updateGuildInstance() {} },
     credentialsManager: { getCredentials: id => credentials[id], getCredentialSteamIds: () => [] } };
 require.cache[index] = { id: index, loaded: true, exports: app };
-const { LocaleManager } = require('../dist/src/managers/localeManager');
+const { LocaleManager } = require('../dist/src/managers/LocaleManager');
 const { RustPlusManager, ConnectionStatus } = require('../dist/src/managers/rustPlusManager');
 const { FcmListenerManager } = require('../dist/src/managers/fcmListenerManager');
 const { isValidSmartSwitchConfig } = require('../dist/src/managers/guildInstanceManager');
