@@ -21,6 +21,7 @@
 import * as discordjs from 'discord.js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { moduleExtension } from '../utils/runtimePaths';
 
 import {
     log, guildInstanceManager as gim, config, localeManager as lm, credentialsManager as cm,
@@ -90,7 +91,7 @@ export class DiscordManager {
         Promise<discordjs.SlashCommandBuilder[]> {
         const commandDir = type === 'global' ? GLOBAL_SLASH_COMMANDS_DIR : GUILD_SLASH_COMMANDS_DIR;
         const commandFiles = fs.readdirSync(path.join(__dirname, '..', commandDir))
-            .filter(file => file.endsWith('.ts'));
+            .filter(file => file.endsWith(moduleExtension));
 
         const commandsData = [];
         for (const file of commandFiles) {
@@ -111,7 +112,7 @@ export class DiscordManager {
     private async loadSlashCommands() {
         /* Global */
         const globalCommandFiles = fs.readdirSync(path.join(__dirname, '..', GLOBAL_SLASH_COMMANDS_DIR))
-            .filter(file => file.endsWith('.ts'));
+            .filter(file => file.endsWith(moduleExtension));
 
         for (const file of globalCommandFiles) {
             try {
@@ -129,7 +130,7 @@ export class DiscordManager {
 
         /* Guild */
         const guildCommandFiles = fs.readdirSync(path.join(__dirname, '..', GUILD_SLASH_COMMANDS_DIR))
-            .filter(file => file.endsWith('.ts'));
+            .filter(file => file.endsWith(moduleExtension));
 
         for (const file of guildCommandFiles) {
             try {
@@ -185,7 +186,7 @@ export class DiscordManager {
 
     public async loadEvents() {
         const eventFiles = fs.readdirSync(path.join(__dirname, '..', DISCORD_EVENTS_DIR))
-            .filter(file => file.endsWith('.ts'));
+            .filter(file => file.endsWith(moduleExtension));
 
         const events: string[] = [];
         for (const file of eventFiles) {

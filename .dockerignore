@@ -1,2 +1,10 @@
 docs/
-node_modules/
+.git
+.env*
+**/node_modules
+**/dist
+credentials/
+guildInstances/
+logs/
+maps/
+temp/

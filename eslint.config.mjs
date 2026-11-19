@@ -23,7 +23,7 @@ export default defineConfig([
   },
   tseslint.configs.recommended,
   {
-    files: ["tests/**/*.cjs"],
+    files: ["tests/**/*.cjs", "scripts/*.cjs"],
     languageOptions: { sourceType: "commonjs", globals: globals.node },
     rules: { "@typescript-eslint/no-require-imports": "off" }
   },

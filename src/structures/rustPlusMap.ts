@@ -22,6 +22,7 @@ import { createCanvas, loadImage, GlobalFonts, SKRSContext2D } from '@napi-rs/ca
 import * as rp from 'rustplus-ts';
 import * as fs from 'fs';
 import * as path from 'path';
+import { projectRoot } from '../utils/runtimePaths';
 
 import { guildInstanceManager as gim, localeManager as lm } from '../../index';
 import { RustPlusInstance } from '../managers/rustPlusManager';
@@ -141,7 +142,7 @@ export class RustPlusMap {
         // TODO! Draw team map notes
 
         const outBuffer = canvas.toBuffer('image/png');
-        fs.writeFileSync(`maps/${imageName}`, outBuffer);
+        fs.writeFileSync(path.join(projectRoot, 'maps', imageName), outBuffer);
 
         return imageName;
     }

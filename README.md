@@ -47,7 +47,7 @@ A NodeJS Discord Bot that uses the [rustplus.js](https://github.com/liamcottle/r
 
 ## **Documentation**
 
-> Documentation can be found [here](https://github.com/alexemanuelol/rustplusplus/blob/master/docs/documentation.md). The documentation explains the features as well as `how to setup the bot`, so make sure to take a look at it 😉
+> Documentation can be found [here](docs/documentation.md). The documentation explains the features as well as `how to setup the bot`, so make sure to take a look at it 😉
 
 ## **Credentials**
 
@@ -56,31 +56,32 @@ A NodeJS Discord Bot that uses the [rustplus.js](https://github.com/liamcottle/r
 
 ## **How to run the bot**
 
-> To run the bot, simply open the terminal of your choice and run the following from repository root:
+Use Node.js 22.13 or later in the 22.x series. Configure the Discord client ID and token as described in the [setup guide](docs/discord_bot_setup.md).
 
-    $ npm start
+```sh
+npm ci
+npm run build
+npm start
+```
 
+The build type-checks and compiles the bot and its local Rust+ library, then copies the runtime assets. Production starts directly from `dist/index.js`. For development, run `npm run dev` to start from TypeScript. Credentials, guild instances, logs and maps are stored in the project root in both modes.
 
 ## **How to update the repository**
 
-> Depending on your OS / choice of terminal you can run:
+```sh
+git pull --ff-only
+npm ci
+npm run build
+npm start
+```
 
-    $ update.bat
+## **Running via Docker**
 
-or
+Set the Discord credentials in the Compose environment and build the local image.
 
-    $ ./update.sh
-
-
-## **Running via docker**
-
-    $ docker run --rm -it -v ${pwd}/credentials:/app/credentials -v ${pwd}/guildInstances:/app/guildInstances -v ${pwd}/logs:/app/logs -e RPP_DISCORD_CLIENT_ID=111....1111 -e RPP_DISCORD_TOKEN=token --name rpp ghcr.io/alexemanuelol/rustplusplus
-
-or
-
-    $ docker-compose up -d
-
-Make sure you use the correct values for DISCORD_CLIENT_ID as well as DISCORD_TOKEN in the docker command/docker-compose.yml
+```sh
+docker compose up -d --build
+```
 
 ## **Thanks to**
 

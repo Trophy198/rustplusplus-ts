@@ -10,8 +10,8 @@ import { bundleDiff, planSchema } from './schema.mjs';
 
 const { values: args } = parseArgs({ options: {
     help: { type: 'boolean' }, bundle: { type: 'string' }, state: { type: 'string' },
-    'master-ref': { type: 'string', default: 'origin/master' },
-    'playground-ref': { type: 'string', default: 'origin/alle_playground' },
+    'master-ref': { type: 'string', default: 'refs/rustplus-protocol/master' },
+    'playground-ref': { type: 'string', default: 'HEAD' },
     'master-proto': { type: 'string' }, 'playground-proto': { type: 'string' },
     'refresh-refs': { type: 'boolean' }, watch: { type: 'string' }
 } });
@@ -115,7 +115,12 @@ function list(rows) {
 }
 
 async function check() {
-    if (args['refresh-refs']) git('-C', root, 'fetch', 'origin', 'master', 'alle_playground');
+    const masterRef = args['master-ref'];
+    if (masterRef === 'refs/rustplus-protocol/master' && (args['refresh-refs'] ||
+        spawnSync('git', ['-C', root, 'show-ref', '--verify', '--quiet', masterRef]).status !== 0)) {
+        git('-C', root, 'fetch', '--no-tags', 'https://github.com/alexemanuelol/rustplusplus.git',
+            'refs/heads/master:' + masterRef);
+    }
     mkdirSync(state, { recursive: true });
     const history = readdirSync(state).filter(f => /^\d{8}$/.test(f)).sort();
     const last = history.at(-1);

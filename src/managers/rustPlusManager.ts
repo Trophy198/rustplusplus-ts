@@ -22,6 +22,7 @@ import * as discordjs from 'discord.js';
 import * as rp from 'rustplus-ts';
 import * as fs from 'fs';
 import * as path from 'path';
+import { moduleExtension } from '../utils/runtimePaths';
 import * as winston from 'winston';
 
 import {
@@ -217,8 +218,8 @@ export class RustPlusInstance {
 
     private getCommandNames(): string[] {
         return fs.readdirSync(path.join(__dirname, '..', 'prefixCommands'))
-            .filter(file => file.endsWith('.ts'))
-            .map(file => file.replace(/\.ts$/, ''));
+            .filter(file => file.endsWith(moduleExtension))
+            .map(file => path.basename(file, moduleExtension));
     }
 
     public startup(): Promise<void> {
@@ -294,7 +295,8 @@ export class RustPlusInstance {
 
     private async loadRustPlusEvents(session: number) {
         const rustPlusEventFilesPath = path.join(__dirname, '..', 'rustPlusEvents');
-        const rustPlusEventFiles = fs.readdirSync(rustPlusEventFilesPath).filter(file => file.endsWith('.ts'));
+        const rustPlusEventFiles = fs.readdirSync(rustPlusEventFilesPath)
+            .filter(file => file.endsWith(moduleExtension));
 
         for (const file of rustPlusEventFiles) {
             const filePath = path.join(rustPlusEventFilesPath, file);
@@ -543,7 +545,7 @@ export class RustPlusInstance {
             command = commandNamesCurrentLocale[aliasResolvedCommandName];
         }
 
-        const commandPath = path.join(__dirname, '..', 'prefixCommands', `${command}.ts`);
+        const commandPath = path.join(__dirname, '..', 'prefixCommands', `${command}${moduleExtension}`);
         const commandModule = await import(commandPath);
 
         const args = messageString.slice(baseCommandStartRaw.length).trim().split(/\s+/).filter(Boolean);

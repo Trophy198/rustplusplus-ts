@@ -2,32 +2,34 @@
     "name": "rustplusplus",
     "version": "2.0.0-rc.1",
     "description": "A NodeJS Discord Bot that uses the rustplus.js library to utilize the power of the Rust+ Companion App with additional Quality-of-Life features.",
-    "main": "index.ts",
+    "engines": { "node": "^22.13.0 || >=24.0.0" },
+    "main": "dist/index.js",
     "workspaces": ["packages/rustplus-ts"],
     "scripts": {
-        "start": "ts-node index.ts",
-        "startn": "node --no-deprecation -r ts-node/register index.ts",
+        "start": "node dist/index.js",
+        "dev": "ts-node index.ts",
+        "build": "npm run build --workspace rustplus-ts && node scripts/build-bot.cjs",
+        "startn": "node --no-deprecation dist/index.js",
         "compile": "tsc",
         "preinstall": "npx npm-force-resolutions",
-        "pretest": "npm run build --workspace rustplus-ts",
-        "test": "tsc --noEmit -p . && node --require ts-node/register/transpile-only --test tests/*.test.cjs",
+        "pretest": "npm run build",
+        "test": "node --require ts-node/register/transpile-only --test tests/*.test.cjs",
         "lint": "npx eslint . --ext .ts",
         "gen-env": "ts-node scripts/generate-env.ts",
         "gen-icons": "ts-node scripts/generate-icons.ts",
         "unusedPhrases": "npx ts-node scripts/findUnusedPhrases.ts",
-        "find-eslint-comments": "grep -r --exclude-dir=node_modules 'eslint-disable' .",
-        "force-update-master": "git fetch origin && git reset --hard origin/master"
+        "find-eslint-comments": "grep -r --exclude-dir=node_modules 'eslint-disable' ."
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/alexemanuelol/rustplusplus.git"
+        "url": "https://github.com/Trophy198/rustplusplus-ts.git"
     },
     "author": "Alexemanuelol",
     "license": "SEE LICENSE IN LICENSE",
     "bugs": {
-        "url": "https://github.com/alexemanuelol/rustplusplus/issues"
+        "url": "https://github.com/Trophy198/rustplusplus-ts/issues"
     },
-    "homepage": "https://github.com/alexemanuelol/rustplusplus#readme",
+    "homepage": "https://github.com/Trophy198/rustplusplus-ts#readme",
     "dependencies": {
         "@discordjs/rest": "^2.6.1",
         "@discordjs/voice": "^0.19.2",

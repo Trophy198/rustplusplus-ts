@@ -17,7 +17,7 @@ node tools/rustplus-protocol/check.mjs --refresh-refs
 node tools/rustplus-protocol/check.mjs --watch 60 --refresh-refs
 ```
 
-기본 비교 대상은 로컬 Git의 `origin/master`와 `origin/alle_playground`입니다. `--refresh-refs`는 두 원격 ref를 먼저 fetch합니다. 현재 작업 브랜치의 로컬 rustplus-ts까지 비교하려면 `--playground-ref HEAD`를 붙입니다. 이때 해당 커밋의 워크스페이스 스키마를 읽습니다. 다른 포크나 작업 브랜치는 `--master-ref`, `--playground-ref`로 지정합니다. npm 의존성은 lockfile 무결성과 일치하는 배포 메타데이터의 `gitHead`로 소스를 조회합니다.
+기본 비교 대상은 원본 저장소의 `master`와 현재 체크아웃의 `HEAD`입니다. 첫 실행은 원본 `master`를 `refs/rustplus-protocol/master`에 받아 두고, 이후 `--refresh-refs`로 이 비교용 ref를 갱신합니다. 현재 브랜치에서는 커밋된 워크스페이스 스키마를 읽습니다. 다른 포크나 작업 브랜치는 `--master-ref`, `--playground-ref`로 지정합니다. npm 의존성은 lockfile 무결성과 일치하는 배포 메타데이터의 `gitHead`로 소스를 조회합니다.
 
 ## 결과 읽기
 

@@ -21,6 +21,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import dotenv from 'dotenv';
+import { projectRoot } from './src/utils/runtimePaths';
 
 import { createLogger } from './src/managers/loggerManager';
 import { LocaleManager, Languages, isValidLanguage } from './src/managers/LocaleManager';
@@ -53,13 +54,13 @@ export const config = {
     }
 }
 
-export const log = createLogger(path.join(__dirname, 'logs', 'rustplusplus.log'));
+export const log = createLogger(path.join(projectRoot, 'logs', 'rustplusplus.log'));
 
 function createMissingDirectories() {
     const directories = ['logs', 'guildInstances', 'credentials', 'maps'];
 
     directories.forEach(dir => {
-        const dirPath = path.join(__dirname, dir);
+        const dirPath = path.join(projectRoot, dir);
         if (!fs.existsSync(dirPath)) {
             fs.mkdirSync(dirPath, { recursive: true });
         }
@@ -68,9 +69,9 @@ function createMissingDirectories() {
 createMissingDirectories();
 
 export const localeManager = new LocaleManager(config.general.language);
-export const credentialsManager = new CredentialsManager(path.join(__dirname, 'credentials'));
+export const credentialsManager = new CredentialsManager(path.join(projectRoot, 'credentials'));
 export const guildInstanceManager = new GuildInstanceManager(
-    path.join(__dirname, 'guildInstances'),
+    path.join(projectRoot, 'guildInstances'),
     path.join(__dirname, 'src', 'templates')
 );
 

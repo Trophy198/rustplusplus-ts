@@ -20,6 +20,7 @@
 
 import * as discordjs from 'discord.js';
 import * as path from 'path';
+import { projectRoot } from '../utils/runtimePaths';
 import * as rp from 'rustplus-ts';
 
 import { log, guildInstanceManager as gim, credentialsManager as cm, localeManager as lm } from '../../index';
@@ -203,7 +204,7 @@ export async function sendCctvcodesMessage(dm: DiscordManager, interaction: disc
 export async function sendMapMessage(dm: DiscordManager, interaction: discordjs.Interaction, serverId: types.ServerId,
     imageName: string) {
     const gInstance = gim.getGuildInstance(interaction.guildId as types.GuildId) as GuildInstance;
-    const imagePath = path.join(__dirname, '..', '..', 'maps', `${imageName}`);
+    const imagePath = path.join(projectRoot, 'maps', `${imageName}`);
 
     const content = {
         embeds: [discordEmbeds.getEmbed({
@@ -400,7 +401,7 @@ export async function sendInformationChannelMapMessage(dm: DiscordManager, rpIns
     const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
 
     const content = {
-        files: [new discordjs.AttachmentBuilder(path.join(__dirname, '..', '..', 'maps', mapPath))]
+        files: [new discordjs.AttachmentBuilder(path.join(projectRoot, 'maps', mapPath))]
     };
 
     const message = await dm.sendUpdateMessage(guildId, content, gInstance.guildChannelIds.information,
