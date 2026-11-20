@@ -26,6 +26,7 @@ import * as types from '../utils/types';
 import { DiscordManager } from "../managers/discordManager";
 import { GuildInstance } from '../managers/guildInstanceManager';
 import { Credentials } from '../managers/credentialsManager';
+import { autocompleteLeader } from '../discordGuildSlashCommands/leader';
 import { autocompleteGroup } from '../discordGuildSlashCommands/switchgroup';
 import { fetchSteamProfile } from '../api/steam';
 
@@ -52,6 +53,9 @@ export async function autocompleteHandler(dm: DiscordManager, interaction: disco
     }
     else if (commandName === 'smartalarm') {
         await autocompleteSmartalarmHandler(dm, interaction);
+    }
+    else if (commandName === 'leader') {
+        await autocompleteLeader(dm, interaction);
     }
     else if (commandName === 'switchgroup') {
         await autocompleteGroup(dm, interaction);

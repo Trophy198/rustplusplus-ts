@@ -676,6 +676,7 @@ export const settingsCards = {
     inGameChatCommandPrefix,
     inGameChatCommandsEnabled,
     inGameChatMessageDelay,
+    leaderCommand,
     inGameChatNotifySmartSwitchChangedFromDiscord,
     inGameChatNotify,
     fcmAlarmNotify,
@@ -702,6 +703,19 @@ export async function updateSetting(dm: DiscordManager, guildId: types.GuildId, 
             await dm.handleMessage(message, content, 'edit');
         }
     }
+}
+
+function leaderCommand(guildId: string) {
+    const settings = gim.getGuildInstance(guildId)!.generalSettings;
+    const paired = lm.getIntl(settings.language, 'buttonOnlyPaired');
+    const toggle = (key: 'leaderCommandEnabled' | 'leaderCommandOnlyPaired', label: string) =>
+        new discordjs.ButtonBuilder().setCustomId('GeneralSetting-' + key).setLabel(label)
+            .setStyle(settings[key] ? discordjs.ButtonStyle.Success : discordjs.ButtonStyle.Secondary);
+    return { embeds: [new discordjs.EmbedBuilder().setTitle(lm.getIntl(settings.language, 'settingLeaderCommandTitle'))
+        .setDescription(lm.getIntl(settings.language, 'settingLeaderCommandDesc', { buttonName: paired }))],
+    components: [new discordjs.ActionRowBuilder<discordjs.ButtonBuilder>().addComponents(
+        toggle('leaderCommandEnabled', lm.getIntl(settings.language, settings.leaderCommandEnabled ?
+            'buttonEnabled' : 'buttonDisabled')), toggle('leaderCommandOnlyPaired', paired))] };
 }
 
 function generalSettingsHeader(guildId: types.GuildId) {

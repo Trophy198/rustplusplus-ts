@@ -17,7 +17,7 @@ app.localeManager = new LocaleManager();
 const oldPluginButton = 'GeneralSetting-fcmAlarmPluginNotifyInGame';
 const expected = ['generalSettingsHeader', 'language', 'voiceGender', 'inGameChatFunctionalityEnabled',
     'inGameChatBotUnmuted', 'inGameChatTrademark', 'inGameChatCommandPrefix', 'inGameChatCommandsEnabled',
-    'inGameChatMessageDelay', 'inGameChatNotifySmartSwitchChangedFromDiscord', 'inGameChatNotify',
+    'inGameChatMessageDelay', 'leaderCommand', 'inGameChatNotifySmartSwitchChangedFromDiscord', 'inGameChatNotify',
     'fcmAlarmNotify', 'fcmAlarmPluginNotify'];
 function fixture(t) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rpp-settings-'));
@@ -100,16 +100,16 @@ test('fresh, concurrent and refresh setups create one set of cards and recover m
     await Promise.all([sync(false), sync(false)]);
     const refs = state.settingsMessages;
     assert.deepEqual(Object.keys(refs).filter(k => refs[k]), expected);
-    assert.equal(messages.size, 13);
+    assert.equal(messages.size, expected.length);
     const missing = refs.language;
     messages.delete(missing);
     await sync(false);
     assert.notEqual(refs.language, missing);
-    assert.equal(messages.size, 13);
+    assert.equal(messages.size, expected.length);
     const snapshot = { ...refs };
     await sync(true);
     assert.deepEqual(refs, snapshot);
-    assert.equal(messages.size, 13);
+    assert.equal(messages.size, expected.length);
 });
 
 test('cleanup preserves foreign and shared messages and retries temporary failures', async t => {
@@ -124,7 +124,7 @@ test('cleanup preserves foreign and shared messages and retries temporary failur
     blocked.add('retry-delete').add('retry-active');
     await sync(false);
     assert.ok(messages.has('foreign'));
-    assert.equal(refs.leaderCommand, null);
+    assert.ok(refs.leaderCommand && refs.leaderCommand !== 'foreign');
     assert.equal(refs.mapWipeNotifyEveryone, null);
     assert.equal(refs.ch47Spawned, null);
     assert.equal(refs.ch47Despawned, 'retry-delete');
@@ -134,7 +134,7 @@ test('cleanup preserves foreign and shared messages and retries temporary failur
     assert.equal(refs.ch47Despawned, null);
     assert.ok(!messages.has('retry-delete'));
     assert.ok(messages.has('language'));
-    assert.equal(messages.size, 14);
+    assert.equal(messages.size, expected.length + 1);
 });
 
 test('cached retired buttons acknowledge the click without changing saved settings', async t => {
@@ -148,4 +148,21 @@ test('cached retired buttons acknowledge the click without changing saved settin
     }
     assert.equal(acknowledgements, 5);
     assert.deepEqual(state, before);
+});
+
+test('leader settings use the saved card, require admin permission and persist both switches', async t => {
+    const { dm, state, guild, sync, dir } = fixture(t);
+    await sync(false);
+    t.mock.method(dm, 'validPermissions', (i, admin) => admin && i.admin);
+    t.mock.method(require('../dist/src/discordUtils/discordMessages'), 'updateSetting', async () => {});
+    const click = (key, admin = true, id = state.settingsMessages.leaderCommand) => buttonHandler(dm, {
+        guildId: guild.id, customId: 'GeneralSetting-' + key, message: { id }, admin, async deferUpdate() {}
+    });
+    assert.equal(await click('leaderCommandEnabled', false), false);
+    assert.equal(await click('leaderCommandEnabled', true, 'retired'), false);
+    assert.equal(await click('leaderCommandEnabled'), true);
+    assert.equal(await click('leaderCommandOnlyPaired'), true);
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, 'test.json')));
+    assert.equal(saved.generalSettings.leaderCommandEnabled, false);
+    assert.equal(saved.generalSettings.leaderCommandOnlyPaired, true);
 });

@@ -13,7 +13,7 @@
 - [ ] despawn       Requires rustlabs data
 - [x] help
 - [ ] item
-- [ ] leader
+- [ ] leader — **main 구현** `/leader member`로 팀원에게 위임. 현재 리더의 서버 페어링 사용
 - [x] map
 - [ ] market — **Rust+ 제한** 자판기 상품·가격 조회
 - [ ] players
@@ -42,7 +42,7 @@
 - [ ] events — **Rust+ 제한** 아래 RustPlus events의 마커 기반 이벤트
 - [x] heli — **Rust+ 제한** 순찰 헬기 위치와 격추
 - [x] large — **Rust+ 제한** 대형 오일리그 중무장 과학자 호출과 상자 타이머
-- [ ] leader
+- [ ] leader — **main 구현** `!leader`로 자신에게, `!leader 이름` 또는 `!leader SteamID`로 팀원에게 위임
 - [x] marker
 - [ ] market — **Rust+ 제한** 자판기 상품·가격 조회
 - [x] mute

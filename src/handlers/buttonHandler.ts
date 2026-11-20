@@ -43,6 +43,22 @@ export async function buttonHandler(dm: DiscordManager, interaction: discordjs.B
         return handleSmartSwitch(dm, interaction, switchAction[1], switchAction[2]);
     }
     /* General settings */
+    if (interaction.customId === 'GeneralSetting-leaderCommandEnabled' ||
+        interaction.customId === 'GeneralSetting-leaderCommandOnlyPaired') {
+        await interaction.deferUpdate();
+        const guild = interaction.guildId && gim.getGuildInstance(interaction.guildId);
+        if (!guild || !interaction.message?.id || guild.settingsMessages.leaderCommand !== interaction.message.id ||
+            !dm.validPermissions(interaction, true)) return false;
+        const key = interaction.customId === 'GeneralSetting-leaderCommandEnabled' ?
+            'leaderCommandEnabled' : 'leaderCommandOnlyPaired';
+        guild.generalSettings[key] = !guild.generalSettings[key];
+        if (!gim.updateGuildInstance(guild.guildId)) {
+            guild.generalSettings[key] = !guild.generalSettings[key];
+            return false;
+        }
+        await discordMessages.updateSetting(dm, guild.guildId, 'leaderCommand');
+        return true;
+    }
     if (interaction.customId === 'GeneralSetting-inGameChatFunctionalityEnabled') {
         return await inGameChatFunctionalityEnabledButtonHandler(dm, interaction);
     }

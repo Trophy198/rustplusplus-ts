@@ -66,12 +66,36 @@ async function setup(t, relay = false, type = rp.AppEntityType.Switch) {
     const owners = new Map([[light, accounts[0]], [pump, accounts[1]]]);
     const sim = { socket: null, hold: false, failWrite: false, pending: null };
     const send = (socket, message) => socket.send(rp.AppMessage.toBinary(rp.AppMessage.create(message)));
-    ws.on('connection', socket => {
+    ws.on('connection', (socket, upgrade) => {
         sim.socket = socket;
+        const protocol = upgrade.headers['sec-websocket-protocol']?.split(',').map(s => s.trim());
+        const relayAccount = protocol && accounts.find(id => protocol[0] === 'rustplus.auth.v1' &&
+            protocol[1] === Buffer.from(credentials[id].rustplusAuthToken).toString('base64url'));
+        if (relay) assert.ok(relayAccount);
+        sim.connections ??= [];
+        sim.connections.push({ account: relayAccount, socket });
         socket.on('message', bytes => {
             const request = rp.AppRequest.fromBinary(bytes);
             let body;
-            if (request.getInfo) body = { info: {} };
+            if (sim.team && (request.getTeamInfo || request.promoteToLeader)) {
+                assert.ok(accounts.includes(request.playerId));
+                assert.equal(request.playerToken, 100 + accounts.indexOf(request.playerId));
+                if (relay) assert.equal(request.playerId, relayAccount);
+                if (request.getTeamInfo) {
+                    sim.beforeTeamRead?.(request.playerId);
+                    body = { teamInfo: sim.team };
+                } else {
+                    const recipient = request.promoteToLeader.steamId;
+                    sim.promotions.push([request.playerId, recipient]);
+                    if (request.playerId !== sim.team.leaderSteamId || sim.rejectLeader ||
+                        !sim.team.members.some(m => m.steamId === recipient)) {
+                        body = { error: { error: 'no_permission' } };
+                    } else {
+                        if (!sim.ignoreLeader) sim.team.leaderSteamId = recipient;
+                        body = { success: {} };
+                    }
+                }
+            } else if (request.getInfo) body = { info: {} };
             else if (request.getEntityInfo || request.setEntityValue) {
                 const { entityId, playerId } = request;
                 requests.push(request);
@@ -89,7 +113,8 @@ async function setup(t, relay = false, type = rp.AppEntityType.Switch) {
                 }
             } else body = { error: { error: 'unsupported' } }; // Map setup can fail independently.
             const reply = () => send(socket, { response: { seq: request.seq, ...body } });
-            if ((sim.hold && request.getEntityInfo) || (sim.holdWrites && request.setEntityValue)) sim.pending = reply;
+            if ((sim.hold && request.getEntityInfo) || (sim.holdWrites && request.setEntityValue) ||
+                (sim.holdTeam && request.getTeamInfo)) sim.pending = reply;
             else reply();
         });
     });

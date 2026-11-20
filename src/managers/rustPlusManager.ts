@@ -136,6 +136,7 @@ export class RustPlusInstance {
     private lg: winston.Logger;
     public guildId: types.GuildId;
     private relaySteamId?: string;
+    public get connectedRelayAccount() { return this.relaySteamId; }
     private started = false;
     private starting?: Promise<void>;
     private generation = 0;
