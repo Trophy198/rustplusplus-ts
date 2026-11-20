@@ -1,4 +1,6 @@
 {
+    "prefixCommand-steamid": "steamid",
+    "steamIdAmbiguous": "Multiple teammates match that name. Each can use {command} to show their own Steam ID.",
     "prefixCommand-player": "player",
     "prefixCommand-players": "players",
     "players_command": "Look up players on a Rust server",

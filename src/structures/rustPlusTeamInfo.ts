@@ -26,6 +26,13 @@ import * as types from '../utils/types';
 import { RustPlusTeamInfoMember } from './rustPlusTeamInfoMember';
 import { GuildInstance } from '../managers/guildInstanceManager';
 
+export function findTeamMembersByName(team: rp.AppTeamInfo, name: string) {
+    const query = name.trim().toLowerCase();
+    if (!query) return [];
+    const exact = team.members.filter(member => member.name.toLowerCase() === query);
+    return exact.length ? exact : team.members.filter(member => member.name.toLowerCase().includes(query));
+}
+
 export class RustPlusTeamInfo {
     public rpInstance: RustPlusInstance;
     public appTeamInfo: rp.AppTeamInfo;

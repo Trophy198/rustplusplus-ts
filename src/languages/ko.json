@@ -1,4 +1,6 @@
 {
+    "prefixCommand-steamid": "스팀아이디",
+    "steamIdAmbiguous": "이 이름에 해당하는 팀원이 여러 명입니다. 각자 {command}로 자기 Steam ID를 확인할 수 있습니다.",
     "prefixCommand-player": "플레이어",
     "prefixCommand-players": "플레이어들",
     "players_command": "Rust 서버의 플레이어를 조회합니다",

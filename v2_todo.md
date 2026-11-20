@@ -57,7 +57,7 @@
 - [x] send
 - [x] small — **Rust+ 제한** 소형 오일리그 중무장 과학자 호출과 상자 타이머
 - [ ] stack         Requires rustlabs data
-- [ ] steamid
+- [ ] steamid — **main 구현** `!steamid`는 팀 채팅 발신자의 Steam ID를, `!steamid 이름`은 현재 팀원의 Steam ID를 표시합니다. 이름 일부로도 검색할 수 있습니다.
 - [x] team
 - [x] time
 - [x] timer

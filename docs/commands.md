@@ -614,7 +614,7 @@ Use `!player <part of a name>` to find an online player or `!players` to list na
 
 ## **steamid**
 
-> **Get the steamid of a teammate.**
+Use `!steamid` in team chat to see your own Steam ID. Use `!steamid <name>` to look up a current teammate, including an offline one. An exact name takes priority over a partial match. If several names match, use the full name.
 
 Subcommand | Description | Required
 ---------- | ----------- | --------

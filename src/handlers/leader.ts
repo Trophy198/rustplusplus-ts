@@ -1,6 +1,7 @@
 import { once } from 'node:events';
 import { RustPlus, isValidAppResponse, type AppTeamInfo } from 'rustplus-ts';
 import { credentialsManager as cm, guildInstanceManager as gim, localeManager as lm } from '../../index';
+import { findTeamMembersByName } from '../structures/rustPlusTeamInfo';
 import { ConnectionStatus, type RustPlusInstance } from '../managers/rustPlusManager';
 
 const transfers = new WeakSet<RustPlusInstance>();
@@ -9,8 +10,7 @@ function resolveMember(team: AppTeamInfo, query: string) {
     const text = query.trim().toLowerCase();
     if (!text) return [];
     if (/^\d{17}$/.test(text)) return team.members.filter(member => member.steamId === text);
-    const exact = team.members.filter(member => member.name.toLowerCase() === text);
-    return exact.length ? exact : team.members.filter(member => member.name.toLowerCase().includes(text));
+    return findTeamMembersByName(team, text);
 }
 
 export async function transferLeader(instance: RustPlusInstance, query: string, callerSteamId?: string) {

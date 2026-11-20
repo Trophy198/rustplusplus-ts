@@ -95,6 +95,12 @@ async function setup(t, relay = false, type = rp.AppEntityType.Switch) {
                         body = { success: {} };
                     }
                 }
+            } else if (sim.teamReplies && request.sendTeamMessage) {
+                assert.ok(accounts.includes(request.playerId));
+                assert.equal(request.playerToken, 100 + accounts.indexOf(request.playerId));
+                if (relay) assert.equal(request.playerId, relayAccount);
+                sim.teamReplies.push({ from: request.playerId, text: request.sendTeamMessage.message });
+                body = { success: {} };
             } else if (request.getInfo) body = { info: {} };
             else if (request.getEntityInfo || request.setEntityValue) {
                 const { entityId, playerId } = request;
