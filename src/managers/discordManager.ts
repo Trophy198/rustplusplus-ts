@@ -298,12 +298,12 @@ export class DiscordManager {
         await this.setupGuildSettingsChannel(guild, refreshSettings);
         await this.setupGuildServersChannel(guild, true);
         await this.setupGuildSmartSwitchesChannel(guild, true);
+        await this.setupGuildSmartSwitchGroupsChannel(guild);
         await this.setupGuildSmartAlarmsChannel(guild, true);
         await this.setupGuildStorageMonitorsChannel(guild, true);
 
         // TODO! Add setup functions for:
         // - information
-        // - smartSwitchGroups
         // - trackers
     }
 
@@ -500,7 +500,15 @@ export class DiscordManager {
         }
     }
 
-    // TODO! setupGuildSmartSwitchGroupsChannel
+    public async setupGuildSmartSwitchGroupsChannel(guild: discordjs.Guild) {
+        const config = gim.getGuildInstance(guild.id);
+        for (const [serverId, server] of Object.entries(config?.serverInfoMap ?? {})) {
+            if (!server.active) continue;
+            for (const id of Object.keys(server.smartSwitchGroupConfigMap)) {
+                await discordMessages.sendSmartSwitchGroupMessage(this, guild.id, serverId, id);
+            }
+        }
+    }
 
     public async setupGuildSmartAlarmsChannel(guild: discordjs.Guild, update: boolean = true,
         create: boolean = false) {

@@ -18,6 +18,8 @@
 
 */
 
+import { manageGroupCard } from './smartSwitchGroupControls';
+import { manageSwitch } from './smartSwitchControls';
 import * as discordjs from 'discord.js';
 
 import { guildInstanceManager as gim } from '../../index';
@@ -28,6 +30,9 @@ import * as discordMessages from '../discordUtils/discordMessages';
 
 export async function modalHandler(dm: DiscordManager, interaction: discordjs.ModalSubmitInteraction):
     Promise<boolean> {
+    if (interaction.customId.startsWith('SwitchGroup:')) return manageGroupCard(dm, interaction);
+    const switchEdit = /^SmartSwitchEdit(\[.*\])$/.exec(interaction.customId);
+    if (switchEdit) return manageSwitch(dm, interaction, 'edit', switchEdit[1]);
     /* GeneralSettings */
     if (interaction.customId === 'GeneralSetting-inGameChatTrademark') {
         return await inGameChatTrademarkModalHandler(dm, interaction);
@@ -68,10 +73,18 @@ async function inGameChatCommandPrefixModalHandler(dm: DiscordManager, interacti
     gInstance.generalSettings.inGameChatCommandPrefix = commandPrefix;
     gim.updateGuildInstance(guildId);
 
-    // TODO! Update smart devices embeds that show the prefix
 
     await interaction.deferUpdate();
     await discordMessages.updateSetting(dm, guildId, 'inGameChatCommandPrefix');
+    for (const [serverId, server] of Object.entries(gInstance.serverInfoMap)) {
+        if (!server.active) continue;
+        for (const groupId of Object.keys(server.smartSwitchGroupConfigMap)) {
+            await discordMessages.sendSmartSwitchGroupMessage(dm, guildId, serverId, groupId);
+        }
+        for (const entityId of Object.keys(server.smartSwitchConfigMap)) {
+            await discordMessages.sendSmartSwitchMessage(dm, guildId, serverId, entityId);
+        }
+    }
 
     return true;
 }

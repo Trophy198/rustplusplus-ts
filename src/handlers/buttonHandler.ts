@@ -18,9 +18,10 @@
 
 */
 
+import { manageSwitch, switchCardTarget } from './smartSwitchControls';
+import { manageGroupCard, switchGroupCardTarget } from './smartSwitchGroupControls';
 import * as discordjs from 'discord.js';
 
-import { isUint64String } from 'rustplus-ts';
 import { guildInstanceManager as gim, rustPlusManager as rpm, localeManager as lm } from '../../index';
 import { ConnectionStatus } from '../managers/rustPlusManager';
 import { DiscordManager } from "../managers/discordManager";
@@ -31,6 +32,12 @@ import * as discordModals from '../discordUtils/discordModals';
 
 export async function buttonHandler(dm: DiscordManager, interaction: discordjs.ButtonInteraction):
     Promise<boolean> {
+    if (interaction.customId.startsWith('SwitchGroup:')) return manageGroupCard(dm, interaction);
+    if (interaction.customId === 'SwitchGroupOn' || interaction.customId === 'SwitchGroupOff') {
+        return handleSwitchGroup(dm, interaction);
+    }
+    const manage = /^(SmartSwitchEdit|SmartSwitchRemove)(\[.*\])$/.exec(interaction.customId);
+    if (manage) return manageSwitch(dm, interaction, manage[1] === 'SmartSwitchEdit' ? 'edit' : 'remove', manage[2]);
     const switchAction = /^(SmartSwitchOn|SmartSwitchOff|SmartSwitchRead)(\[.*\])$/.exec(interaction.customId);
     if (switchAction) {
         return handleSmartSwitch(dm, interaction, switchAction[1], switchAction[2]);
@@ -104,6 +111,29 @@ export async function buttonHandler(dm: DiscordManager, interaction: discordjs.B
 }
 
 
+async function handleSwitchGroup(dm: DiscordManager, interaction: discordjs.ButtonInteraction) {
+    await interaction.deferUpdate();
+    const guild = interaction.guildId && gim.getGuildInstance(interaction.guildId);
+    if (!guild) return false;
+    const lang = guild.generalSettings.language;
+    const reply = (content: string) => interaction.followUp({ content, flags: discordjs.MessageFlags.Ephemeral,
+        allowedMentions: { parse: [] } });
+    if (!dm.validPermissions(interaction)) {
+        await reply(lm.getIntl(lang, 'errorDescMissingPermission'));
+        return false;
+    }
+    const target = switchGroupCardTarget(guild, interaction.message.id);
+    const instance = target && rpm.getInstance(guild.guildId, target.serverId);
+    if (target && instance?.connectionStatus === ConnectionStatus.Connected) {
+        const { groupId, group } = target;
+        const { confirmed, total } = await instance.setSwitchGroup(groupId, interaction.customId === 'SwitchGroupOn');
+        await reply(lm.getIntl(lang, 'groupResult', { name: group.name, ok: String(confirmed), total: String(total) }));
+        return total > 0 && confirmed === total;
+    }
+    await reply(lm.getIntl(lang, 'groupUnavailable'));
+    return false;
+}
+
 async function handleSmartSwitch(dm: DiscordManager, interaction: discordjs.ButtonInteraction, action: string,
     identifier: string): Promise<boolean> {
     await interaction.deferUpdate();
@@ -118,14 +148,16 @@ async function handleSmartSwitch(dm: DiscordManager, interaction: discordjs.Butt
         return false;
     }
 
-    let ids: unknown;
-    try { ids = JSON.parse(identifier); } catch { return false; }
-    if (!Array.isArray(ids) || ids.length !== 2 || typeof ids[0] !== 'string' || !isUint64String(ids[1])) return false;
-    const [serverId, entityId] = ids;
-    const device = guild.serverInfoMap[serverId]?.smartSwitchConfigMap?.[entityId];
+    const target = switchCardTarget(guild, identifier, interaction.message.id);
+    if (!target) {
+        await interaction.followUp({ content: lm.getIntl(language, 'switchCardExpired'),
+            flags: discordjs.MessageFlags.Ephemeral });
+        return false;
+    }
+    const { serverId, entityId, device } = target;
     const instance = rpm.getInstance(guildId, serverId);
     const desired = action === 'SmartSwitchRead' ? undefined : action === 'SmartSwitchOn';
-    if (device?.messageId === interaction.message.id && instance?.connectionStatus === ConnectionStatus.Connected) {
+    if (instance?.connectionStatus === ConnectionStatus.Connected) {
         const before = instance.smartSwitchValue(entityId);
         if (await instance.requestSmartSwitch(entityId, desired)) {
             if (guild.generalSettings.inGameChatNotifySmartSwitchChangedFromDiscord &&
@@ -138,7 +170,7 @@ async function handleSmartSwitch(dm: DiscordManager, interaction: discordjs.Butt
             return true;
         }
     }
-    const content = lm.getIntl(language, 'noCommunicationSmartSwitch', { name: device?.name ?? entityId });
+    const content = lm.getIntl(language, 'noCommunicationSmartSwitch', { name: device.name });
     await interaction.followUp({ content, flags: discordjs.MessageFlags.Ephemeral, allowedMentions: { parse: [] } });
     return false;
 }

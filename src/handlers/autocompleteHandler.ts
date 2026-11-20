@@ -26,6 +26,7 @@ import * as types from '../utils/types';
 import { DiscordManager } from "../managers/discordManager";
 import { GuildInstance } from '../managers/guildInstanceManager';
 import { Credentials } from '../managers/credentialsManager';
+import { autocompleteGroup } from '../discordGuildSlashCommands/switchgroup';
 import { fetchSteamProfile } from '../api/steam';
 
 export async function autocompleteHandler(dm: DiscordManager, interaction: discordjs.AutocompleteInteraction):
@@ -51,6 +52,9 @@ export async function autocompleteHandler(dm: DiscordManager, interaction: disco
     }
     else if (commandName === 'smartalarm') {
         await autocompleteSmartalarmHandler(dm, interaction);
+    }
+    else if (commandName === 'switchgroup') {
+        await autocompleteGroup(dm, interaction);
     }
     else if (commandName === 'smartswitch') {
         await autocompleteSmartswitchHandler(dm, interaction);
@@ -271,20 +275,15 @@ async function autocompleteSmartswitchHandler(dm: DiscordManager, interaction: d
 
     switch (interaction.options.getSubcommand()) {
         case 'edit': {
-            const filteredSmartswitches: { name: string; value: string }[] = [];
             const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
+            const query = interaction.options.getFocused().trim().toLowerCase();
             const entities = gim.getSmartDeviceEntities(guildId, rp.AppEntityType.Switch);
-
-            for (const entity of entities) {
-                const name = gInstance.serverInfoMap[entity.serverId].smartSwitchConfigMap[entity.entityId].name;
-                filteredSmartswitches.push({
-                    name: `${name} (${entity.entityId})`,
-                    value: entity.entityId
-                });
-            }
-
-            /* Discord limits autocomplete choices to 25 max */
-            interaction.respond(filteredSmartswitches.slice(0, 25));
+            const choices = entities.map(({ serverId, entityId }) => {
+                const server = gInstance.serverInfoMap[serverId];
+                const name = server.smartSwitchConfigMap[entityId].name;
+                return { name: (name + ' (' + entityId + ') · ' + server.name).slice(0, 100), value: entityId };
+            });
+            await interaction.respond(choices.filter(choice => choice.name.toLowerCase().includes(query)).slice(0, 25));
 
         } break;
 

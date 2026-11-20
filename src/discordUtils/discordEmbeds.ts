@@ -581,6 +581,11 @@ export function getSmartSwitchEmbed(guildId: types.GuildId, serverId: types.Serv
     const smartSwitchConfig = serverInfo.smartSwitchConfigMap[entityId] as SmartSwitchConfig;
     const language = gInstance.generalSettings.language;
 
+    const owners = (smartSwitchConfig.pairedSteamIds ?? []).map(steamId => {
+        const discordId = cm.getCredentials(steamId)?.discordUserId;
+        return discordId ? `<@${discordId}> · \`${steamId}\`` : `\`${steamId}\``;
+    });
+    const prefix = gInstance.generalSettings.inGameChatCommandPrefix;
     return getEmbed({
         title: smartSwitchConfig.name,
         color: colorHexToNumber(active === undefined ? constants.COLOR_GREY :
@@ -589,6 +594,14 @@ export function getSmartSwitchEmbed(guildId: types.GuildId, serverId: types.Serv
         thumbnail: { url: `attachment://${smartSwitchConfig.img}` },
         footer: { text: serverInfo.name },
         fields: [{
+            name: lm.getIntl(language, 'switchCommand'),
+            value: `\`${prefix}${smartSwitchConfig.command || entityId}\``,
+            inline: true
+        }, {
+            name: lm.getIntl(language, 'switchOwners'),
+            value: owners.join('\n') || lm.getIntl(language, 'switchOwnersUnknown'),
+            inline: false
+        }, {
             name: lm.getIntl(language, 'infoChannelEmbedTeamFieldTitleStatus'),
             value: lm.getIntl(language, active === undefined ? 'unknown' : active ? 'buttonOn' : 'buttonOff'),
             inline: true

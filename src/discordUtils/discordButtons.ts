@@ -204,6 +204,12 @@ export function getServerButtons(guildId: types.GuildId, serverId: types.ServerI
     );
 }
 
+export function createSwitchGroupButton(guild: GuildInstance) {
+    return new discordjs.ButtonBuilder().setCustomId('SwitchGroup:create')
+        .setLabel(lm.getIntl(guild.generalSettings.language, 'groupButton_create'))
+        .setStyle(discordjs.ButtonStyle.Primary);
+}
+
 export function getSmartSwitchButtons(guildId: types.GuildId, serverId: types.ServerId, entityId: types.EntityId,
     active: boolean | undefined, connected: boolean): discordjs.ActionRowBuilder<discordjs.ButtonBuilder> {
     const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
@@ -217,7 +223,15 @@ export function getSmartSwitchButtons(guildId: types.GuildId, serverId: types.Se
             active ? discordjs.ButtonStyle.Danger : discordjs.ButtonStyle.Success,
         disabled: !connected,
         type: discordjs.ComponentType.Button
-    }));
+    }), getButton({
+        customId: `SmartSwitchEdit${identifier}`,
+        label: lm.getIntl(language, 'buttonEdit'), style: discordjs.ButtonStyle.Primary,
+        type: discordjs.ComponentType.Button
+    }), getButton({
+        customId: `SmartSwitchRemove${identifier}`,
+        emoji: '🗑️', style: discordjs.ButtonStyle.Secondary,
+        type: discordjs.ComponentType.Button
+    }), createSwitchGroupButton(gInstance));
 }
 
 export function getSmartAlarmButtons(guildId: types.GuildId, serverId: types.ServerId, entityId: types.EntityId):

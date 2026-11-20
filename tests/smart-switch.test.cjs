@@ -124,3 +124,101 @@ test('pairing on a connected server creates one card even during broadcasts and 
     assert.equal(deleted.length, 1);
     assert.equal(cards.size, 3);
 });
+
+test('switch card edits, account attribution, team commands and guild-scoped removal', async t => {
+    const { card, pair, cards, devices, instance, states, requests, server } = await setup(t);
+    const { buttonHandler } = require('../dist/src/handlers/buttonHandler');
+    const { modalHandler } = require('../dist/src/handlers/modalHandler');
+    const guildId = instance.guildId, message = { id: devices[light].messageId };
+    const [, editButton, removeButton] = card(light).buttons;
+    assert.equal(editButton.style, 1);
+    assert.equal(removeButton.style, 2);
+    assert.equal(removeButton.emoji.name, '🗑️');
+    assert.match(editButton.custom_id, /^SmartSwitchEdit/);
+    assert.match(removeButton.custom_id, /^SmartSwitchRemove/);
+    assert.ok(card(light).embed.fields.some(field => field.value.includes(accounts[0]) &&
+        field.value.includes('<@0>') && !field.value.includes(accounts[1])));
+    await pair(light, 1);
+    assert.ok(card(light).embed.fields.some(field => accounts.every(id => field.value.includes(id))));
+    const replies = [];
+    const base = { guildId, message, allowed: true, async deferUpdate() {},
+        async followUp(r) { replies.push(r); }, async reply(r) { replies.push(r); } };
+    let modal;
+    const edit = { ...base, customId: editButton.custom_id, isButton: () => true,
+        async showModal(m) { modal = m.toJSON(); } };
+    assert.equal(await buttonHandler(dm, { ...edit, allowed: false }), false);
+    assert.equal(await buttonHandler(dm, { ...edit, message: { id: 'old' } }), false);
+    assert.equal(modal, undefined);
+    assert.equal(await buttonHandler(dm, edit), true);
+    assert.equal(modal.components[1].components[0].value, light);
+    const submit = (command, extra) => modalHandler(dm, { ...base, customId: modal.custom_id, isButton: () => false,
+        fields: { getTextInputValue: k => k === 'name' ? 'Workshop' : command }, ...extra });
+    assert.equal(await submit('Light', { allowed: false }), false);
+    assert.equal(await submit('Light', { message: { id: 'old' } }), false);
+    assert.equal(await submit('time'), false);
+    assert.equal(await submit(pump), false);
+    assert.equal(await submit('two words'), false);
+    assert.equal(devices[light].name, 'Smart Switch');
+    assert.equal(await submit('Light'), true);
+    await pair(light, 0);
+    assert.equal(devices[light].command, 'light');
+    assert.equal(card(light).embed.title, 'Workshop');
+    assert.ok(card(light).embed.fields.some(f => f.value.includes('!light')));
+
+    const chat = [];
+    t.mock.method(instance, 'inGameTeamChatQueueMessage', text => chat.push(text));
+    const command = text => instance.prefixCommandHandler({ steamId: accounts[0], message: text }, true);
+    const count = () => requests.filter(r => r.setEntityValue).length;
+    assert.equal(await command('!Light on'), true);
+    assert.equal(states.get(light), true);
+    assert.equal(await command('!' + light + ' off'), true);
+    assert.equal(states.get(light), false);
+    const before = count();
+    assert.equal(await command('!light status'), true);
+    assert.equal(await command('!light wat'), true);
+    assert.equal(count(), before);
+    await Promise.all([command('!light'), command('!' + light)]);
+    assert.equal(count(), before + 2);
+    assert.equal(states.get(light), false);
+    assert.ok(chat.includes('Workshop · ON'));
+    const remove = { ...base, customId: removeButton.custom_id, isButton: () => true };
+    server.smartSwitchGroupConfigMap.group = { smartSwitches: [light, pump] };
+    assert.equal(await buttonHandler(dm, { ...remove, allowed: false }), false);
+    assert.equal(await buttonHandler(dm, remove), true);
+    assert.equal(cards.has(message.id), false);
+    assert.deepEqual(server.smartSwitchGroupConfigMap.group.smartSwitches, [pump]);
+    assert.equal(instance.smartSwitchValue(light), undefined);
+    assert.equal(await command('!light on'), false);
+    assert.equal(await submit('late'), false);
+    assert.equal(await buttonHandler(dm, remove), false);
+});
+
+test('slash edit preserves legacy devices, rejects ambiguous IDs and rolls back a failed save', async t => {
+    const { card, instance, devices, server } = await setup(t);
+    const app = require('../dist/index');
+    const views = require('../dist/src/discordUtils/discordMessages');
+    const slash = require('../dist/src/discordGuildSlashCommands/smartswitch').default;
+    const guild = guilds.get(instance.guildId);
+    delete devices[light].pairedSteamIds;
+    t.mock.method(views, 'sendDefaultMessage', async () => {});
+    const options = { entity_id: light, command: 'lamp' };
+    const replies = [];
+    const interaction = { guildId: instance.guildId, guild: {}, allowed: true, id: 'test',
+        options: { getSubcommand: () => 'edit', getString: k => options[k] ?? null }, async deferReply() {},
+        async editReply(r) { replies.push(r); } };
+    assert.equal(await slash.execute(dm, interaction), true);
+    assert.equal(card(light).embed.fields.find(f => f.name === 'Paired by').value,
+        'Unknown · pair again to record the account');
+    assert.equal(card(light).embed.fields.find(f => f.name === 'In-game command').value, '`!lamp`');
+    const other = { ...devices[light], command: 'other' };
+    guild.serverInfoMap.other = { ...server, smartSwitchConfigMap: { [light]: other } };
+    options.command = 'hall';
+    assert.equal(await slash.execute(dm, interaction), false);
+    assert.equal(devices[light].command, 'lamp');
+    assert.equal(other.command, 'other');
+    delete guild.serverInfoMap.other;
+    t.mock.method(app.guildInstanceManager, 'updateGuildInstance', () => false);
+    assert.equal(await slash.execute(dm, interaction), false);
+    assert.equal(devices[light].command, 'lamp');
+    assert.equal(replies.length, 2);
+});

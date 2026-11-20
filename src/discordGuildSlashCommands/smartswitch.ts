@@ -19,9 +19,10 @@
 */
 
 import * as discordjs from 'discord.js';
-import * as rp from 'rustplus-ts';
+import { isUint64String } from 'rustplus-ts';
+import { editSwitch } from '../handlers/smartSwitchControls';
 
-import { log, config, localeManager as lm, guildInstanceManager as gim, rustPlusManager as rpm } from '../../index';
+import { log, config, localeManager as lm, guildInstanceManager as gim } from '../../index';
 import * as discordMessages from '../discordUtils/discordMessages';
 import { DiscordManager } from '../managers/discordManager';
 import * as types from '../utils/types';
@@ -41,11 +42,15 @@ export default {
 				.addStringOption(option => option
 					.setName('entity_id')
 					.setDescription(lm.getIntl(language, 'slashCommandDescSmartswitchEditEntityId'))
-					.setRequired(true))
+					.setRequired(true).setAutocomplete(true))
+				.addStringOption(option => option.setName('name').setDescription(lm.getIntl(language, 'switchName'))
+					.setMinLength(1).setMaxLength(80))
+				.addStringOption(option => option.setName('command')
+					.setDescription(lm.getIntl(language, 'switchCommand'))
+					.setMinLength(1).setMaxLength(32))
 				.addStringOption(option => option
 					.setName('image')
 					.setDescription(lm.getIntl(language, 'slashCommandDescSmartswitchEditImage'))
-					.setRequired(true)
 					.addChoices(
 						{ name: lm.getIntl(language, 'autoturret'), value: 'autoturret' },
 						{ name: lm.getIntl(language, 'boomBox'), value: 'boombox' },
@@ -111,7 +116,9 @@ async function executeEdit(dm: DiscordManager, interaction: discordjs.ChatInputC
 	const id = `Interaction ID: ${interaction.id} -`
 
 	const entityIdOption = interaction.options.getString('entity_id', true);
-	const imageOption = interaction.options.getString('image', true);
+	const imageOption = interaction.options.getString('image');
+	const name = interaction.options.getString('name') ?? undefined;
+	const command = interaction.options.getString('command') ?? undefined;
 
 	if (!dm.validPermissions(interaction)) {
 		await discordMessages.sendDefaultMessage(dm, interaction, 'errorTitleMissingPermission',
@@ -120,8 +127,14 @@ async function executeEdit(dm: DiscordManager, interaction: discordjs.ChatInputC
 		return false;
 	}
 
-	const serverId = gim.getSmartDeviceServerId(guildId, rp.AppEntityType.Switch, entityIdOption);
-	if (serverId === null) {
+	const matches = isUint64String(entityIdOption) ? Object.entries(gInstance.serverInfoMap)
+		.filter(([, server]) => Object.hasOwn(server.smartSwitchConfigMap, entityIdOption)) : [];
+	const replyError = async (key: string) => {
+		await interaction.editReply(lm.getIntl(gInstance.generalSettings.language, key));
+		return false;
+	};
+	if (matches.length > 1) return replyError('switchAmbiguous');
+	if (matches.length === 0) {
 		const parameters = {
 			entityId: `\`${entityIdOption}\``
 		};
@@ -133,14 +146,13 @@ async function executeEdit(dm: DiscordManager, interaction: discordjs.ChatInputC
 		return false;
 	}
 
-	const entity = gInstance.serverInfoMap[serverId].smartSwitchConfigMap[entityIdOption];
-	entity.img = `${imageOption}.png`;
-	gim.updateGuildInstance(guildId);
-
-	const rpInstance = rpm.getInstance(guildId, serverId);
-	if (rpInstance && gInstance.serverInfoMap[serverId].active) {
-		await discordMessages.sendSmartSwitchMessage(dm, guildId, serverId, entityIdOption);
-	}
+	const [serverId, server] = matches[0];
+	const entity = server.smartSwitchConfigMap[entityIdOption];
+	if (!imageOption && name === undefined && command === undefined) return replyError('switchEditOptions');
+	const error = editSwitch(gInstance, serverId, entityIdOption, { name, command,
+		img: imageOption ? imageOption + '.png' : undefined });
+	if (error) return replyError(error);
+	await discordMessages.sendSmartSwitchMessage(dm, guildId, serverId, entityIdOption);
 
 	const parameters = {
 		entity: `\`${entity.name} (${entityIdOption})\``

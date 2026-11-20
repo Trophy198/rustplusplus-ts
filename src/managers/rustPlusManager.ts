@@ -22,7 +22,7 @@ import * as discordjs from 'discord.js';
 import * as rp from 'rustplus-ts';
 import * as fs from 'fs';
 import * as path from 'path';
-import { moduleExtension } from '../utils/runtimePaths';
+import { moduleExtension, prefixCommandNames } from '../utils/runtimePaths';
 import * as winston from 'winston';
 
 import {
@@ -143,6 +143,8 @@ export class RustPlusInstance {
     private pollVersion = 0;
     private switchStates = new Map<types.EntityId, { value: boolean }>();
     private switchRequests = new Map<types.EntityId, Promise<boolean>>();
+    private groupRequests = new Map<string, Promise<{ confirmed: number; total: number }>>();
+    private groupTimers = new Map<string, NodeJS.Timeout>();
     private alarmStates = new Map<types.EntityId, { version: number; value: boolean; disconnectedAt?: number }>();
     public readonly storageMonitors = new StorageMonitors(this,
         id => this.devicePairing(id, 'storageMonitorConfigMap'));
@@ -206,7 +208,7 @@ export class RustPlusInstance {
         this.inGameTeamChatTimeoutId = undefined;
         this.inGameTeamChatMessagesSentByBot = [];
 
-        this.commandNames = this.getCommandNames();
+        this.commandNames = prefixCommandNames();
 
         /* Latest request responses. */
         this.rpInfo = null;
@@ -224,12 +226,6 @@ export class RustPlusInstance {
         this.informationChannelCounter = 0;
 
         //this.leaderSteamId = '0'; /* 0 When there is no leader. */
-    }
-
-    private getCommandNames(): string[] {
-        return fs.readdirSync(path.join(__dirname, '..', 'prefixCommands'))
-            .filter(file => file.endsWith(moduleExtension))
-            .map(file => path.basename(file, moduleExtension));
     }
 
     public startup(): Promise<void> {
@@ -287,6 +283,9 @@ export class RustPlusInstance {
         this.starting = undefined;
         this.switchStates.clear();
         this.switchRequests.clear();
+        this.groupRequests.clear();
+        for (const timer of this.groupTimers.values()) clearTimeout(timer);
+        this.groupTimers.clear();
         const disconnectedAt = Date.now();
         for (const state of this.alarmStates.values()) state.disconnectedAt ??= disconnectedAt;
         this.alarmReads.clear();
@@ -564,6 +563,7 @@ export class RustPlusInstance {
             }
         }
 
+        const args = messageString.slice(baseCommandStartRaw.length).trim().split(/\s+/).filter(Boolean);
         let command = this.commandNames.find(command => aliasResolvedCommandName === `${command}`);
         if (!command) {
             const commandNamesCurrentLocale = Object.fromEntries(
@@ -572,15 +572,70 @@ export class RustPlusInstance {
                 })
             );
 
-            if (!(aliasResolvedCommandName in commandNamesCurrentLocale)) return false;
-
-            command = commandNamesCurrentLocale[aliasResolvedCommandName];
+            if (Object.hasOwn(commandNamesCurrentLocale, aliasResolvedCommandName)) {
+                command = commandNamesCurrentLocale[aliasResolvedCommandName];
+            }
+        }
+        if (!command) {
+            if (!inGame) return false;
+            const devices = gInstance.serverInfoMap[this.serverId].smartSwitchConfigMap;
+            const device = Object.values(devices).find(d => d.entityId === baseCommandNameRaw ||
+                d.command.toLowerCase() === baseCommandNameRaw.toLowerCase());
+            if (!device) {
+                const groups = gInstance.serverInfoMap[this.serverId].smartSwitchGroupConfigMap;
+                const entry = Object.entries(groups).find(([, g]) =>
+                    g.command?.toLowerCase() === baseCommandNameRaw.toLowerCase());
+                if (!entry) return false;
+                const [groupId, group] = entry;
+                const action = args[0]?.toLowerCase() ?? 'status';
+                if (args.length > 2 || (action === 'status' && args.length > 1) ||
+                    !['on', 'off', 'status'].includes(action)) {
+                    this.sendPrefixCommandResponse(lm.getIntl(language, 'groupUsage',
+                        { command: commandPrefix + group.command }), true);
+                } else if (action === 'status') {
+                    const lines = [...new Set(group.smartSwitches)].map(id => {
+                        const value = this.smartSwitchValue(id);
+                        const state = value === undefined ? 'unknown' : value ? 'buttonOn' : 'buttonOff';
+                        return (devices[id]?.name ?? id) + ' · ' + lm.getIntl(language, state);
+                    });
+                    this.sendPrefixCommandResponse(lines.length ? lines : lm.getIntl(language, 'groupEmpty'), true);
+                } else {
+                    let seconds: number | undefined;
+                    if (args[1]) {
+                        const duration = args[1].toLowerCase();
+                        seconds = /^(?:\d+[dhms])+$/.test(duration) ?
+                            Timer.getSecondsFromStringTime(duration) ?? 0 : 0;
+                        if (!seconds || seconds * 1000 > 2_147_483_647) {
+                            this.sendPrefixCommandResponse(lm.getIntl(language, 'timeArgumentFormatInvalid'), true);
+                            return true;
+                        }
+                    }
+                    const result = await this.setSwitchGroup(groupId, action === 'on', seconds);
+                    this.sendPrefixCommandResponse(lm.getIntl(language, 'groupResult', {
+                        name: group.name, ok: String(result.confirmed), total: String(result.total)
+                    }), true);
+                }
+                return true;
+            }
+            const action = args[0]?.toLowerCase() ?? 'toggle';
+            if (args.length > 1 || !['on', 'off', 'status', 'toggle'].includes(action)) {
+                this.sendPrefixCommandResponse(lm.getIntl(language, 'switchUsage', {
+                    command: commandPrefix + device.command
+                }), true);
+                return true;
+            }
+            const desired = action === 'toggle' ? 'toggle' : action === 'status' ? undefined : action === 'on';
+            const ok = await this.requestSmartSwitch(device.entityId, desired);
+            const value = this.smartSwitchValue(device.entityId);
+            const response = ok && value !== undefined ?
+                device.name + ' · ' + lm.getIntl(language, value ? 'buttonOn' : 'buttonOff') :
+                lm.getIntl(language, 'noCommunicationSmartSwitch', { name: device.name });
+            this.sendPrefixCommandResponse(response, true);
+            return true;
         }
 
         const commandPath = path.join(__dirname, '..', 'prefixCommands', `${command}${moduleExtension}`);
         const commandModule = await import(commandPath);
-
-        const args = messageString.slice(baseCommandStartRaw.length).trim().split(/\s+/).filter(Boolean);
 
         return await commandModule.execute(this, args, message);
     }
@@ -735,6 +790,10 @@ export class RustPlusInstance {
             restore(Object.keys(server?.smartAlarmConfigMap ?? {}), id => this.refreshSmartAlarm(id)),
             restore(Object.keys(server?.storageMonitorConfigMap ?? {}), id => this.storageMonitors.refresh(id))
         ]);
+        if (version === this.pollVersion) {
+            await restore(Object.keys(server?.smartSwitchGroupConfigMap ?? {}),
+                id => discordMessages.sendSmartSwitchGroupMessage(dm, this.guildId, this.serverId, id));
+        }
     }
 
     private devicePairing(entityId: types.EntityId,
@@ -841,11 +900,86 @@ export class RustPlusInstance {
         }
     }
 
-    public async requestSmartSwitch(entityId: types.EntityId, desired?: boolean): Promise<boolean> {
+    public forgetSmartSwitch(entityId: types.EntityId) {
+        this.switchStates.delete(entityId);
+    }
+
+    public cancelSwitchGroupTimer(groupId: string) {
+        clearTimeout(this.groupTimers.get(groupId));
+        this.groupTimers.delete(groupId);
+    }
+
+    public setSwitchGroup(groupId: string, desired: boolean, seconds?: number) {
+        this.cancelSwitchGroupTimer(groupId);
+        return this.applySwitchGroup(groupId, desired, seconds);
+    }
+
+    private async applySwitchGroup(groupId: string, desired: boolean, seconds?: number, targets?: string[]) {
+        const server = gim.getGuildInstance(this.guildId)?.serverInfoMap[this.serverId];
+        const group = server?.smartSwitchGroupConfigMap[groupId];
+        if (!group) return { confirmed: 0, total: 0 };
+        const originalMembers = group.smartSwitches;
+        const members = targets ?? [...new Set(originalMembers)];
+        const confirmedMembers: string[] = [];
         const version = this.pollVersion;
+        const run = async () => {
+            for (const id of members) {
+                const valid = () => {
+                    const current = gim.getGuildInstance(this.guildId)?.serverInfoMap[this.serverId];
+                    return version === this.pollVersion && this.connectionStatus === ConnectionStatus.Connected &&
+                        current?.smartSwitchGroupConfigMap[groupId] === group && group.smartSwitches.includes(id);
+                };
+                if (!valid()) continue;
+                if (this.smartSwitchValue(id) === undefined &&
+                    !await this.requestSmartSwitch(id, undefined, valid)) continue;
+                if (valid() && await this.requestSmartSwitch(id, desired, valid) && valid() &&
+                    this.smartSwitchValue(id) === desired) confirmedMembers.push(id);
+            }
+            return { confirmed: confirmedMembers.length, total: members.length };
+        };
+        const pending = this.groupRequests.get(groupId);
+        const operation = pending ? pending.then(run, run) : run();
+        this.groupRequests.set(groupId, operation);
+        try {
+            const result = await operation;
+            if (seconds && result.confirmed && this.groupRequests.get(groupId) === operation &&
+                group.smartSwitches === originalMembers && server?.smartSwitchGroupConfigMap[groupId] === group) {
+                const timer = setTimeout(() => {
+                    this.groupTimers.delete(groupId);
+                    if (version !== this.pollVersion || group.smartSwitches !== originalMembers) return;
+                    void this.applySwitchGroup(groupId, !desired, undefined, confirmedMembers).catch(error =>
+                        this.lg.warn(`Switch group ${groupId} timer failed: ${error}`));
+                }, seconds * 1000);
+                this.groupTimers.set(groupId, timer);
+                const language = gim.getGuildInstance(this.guildId)!.generalSettings.language;
+                this.sendPrefixCommandResponse(lm.getIntl(language, 'groupTimerSet', {
+                    name: group.name, state: lm.getIntl(language, desired ? 'buttonOff' : 'buttonOn'),
+                    time: Timer.secondsToFullScale(seconds)
+                }), true);
+            }
+            return result;
+        } finally {
+            if (this.groupRequests.get(groupId) === operation) this.groupRequests.delete(groupId);
+        }
+    }
+
+    public async requestSmartSwitch(entityId: types.EntityId, desired?: boolean | 'toggle',
+        stillSelected?: () => boolean): Promise<boolean> {
+        const version = this.pollVersion;
+        const server = gim.getGuildInstance(this.guildId)?.serverInfoMap[this.serverId];
+        const device = server?.smartSwitchConfigMap[entityId];
+        if (!device) return false;
+        const stillPaired = () => gim.getGuildInstance(this.guildId)?.serverInfoMap[this.serverId]
+            ?.smartSwitchConfigMap[entityId] === device;
         const previous = this.switchRequests.get(entityId);
         const current = (previous ?? Promise.resolve())
-            .then(() => this.runSwitchRequest(version, entityId, desired))
+            .then(() => {
+                // Membership controls dispatch. Once sent, the acknowledgement still belongs to the device.
+                if (stillSelected && !stillSelected()) return false;
+                if (stillSelected && typeof desired === 'boolean' && version === this.pollVersion && stillPaired() &&
+                    this.smartSwitchValue(entityId) === desired) return true;
+                return this.runSwitchRequest(version, entityId, stillPaired, desired);
+            })
             .catch(error => {
                 this.lg.warn(`Smart switch ${entityId} request failed: ${error}`);
                 return false;
@@ -858,8 +992,9 @@ export class RustPlusInstance {
         }
     }
 
-    private async runSwitchRequest(version: number, entityId: types.EntityId, desired?: boolean) {
-        if (version !== this.pollVersion) return false;
+    private async runSwitchRequest(version: number, entityId: types.EntityId,
+        stillPaired: () => boolean, desired?: boolean | 'toggle') {
+        if (version !== this.pollVersion || !stillPaired()) return false;
         const pairing = this.devicePairing(entityId, 'smartSwitchConfigMap');
         const before = this.switchStates.get(entityId);
         let value: boolean | undefined;
@@ -872,11 +1007,12 @@ export class RustPlusInstance {
                     value = reply.entityInfo.payload?.value;
                 }
             } else if (before) {
-                const reply = await this.rustPlus.setEntityValueAsync(steamId, playerToken, entityId, desired);
-                if (rp.isValidAppResponse(reply) && !reply.error && reply.success) value = desired;
+                const next = desired === 'toggle' ? !before.value : desired;
+                const reply = await this.rustPlus.setEntityValueAsync(steamId, playerToken, entityId, next);
+                if (rp.isValidAppResponse(reply) && !reply.error && reply.success) value = next;
             }
         }
-        if (version !== this.pollVersion ||
+        if (version !== this.pollVersion || !stillPaired() ||
             pairing !== this.devicePairing(entityId, 'smartSwitchConfigMap')) return false;
         if (this.switchStates.get(entityId) === before) {
             if (value === undefined) this.switchStates.delete(entityId);

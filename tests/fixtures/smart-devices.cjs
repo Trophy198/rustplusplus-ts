@@ -20,7 +20,7 @@ const credentials = Object.fromEntries(accounts.map((id, i) =>
 const guilds = new Map();
 const dm = { connectionStarted: [], validPermissions: interaction => interaction.allowed };
 const app = { log, discordManager: dm, config: { general: { serverPollingHandlerIntervalMs: 60000 } },
-    guildInstanceManager: { getGuildInstance: id => guilds.get(id), updateGuildInstance() {} },
+    guildInstanceManager: { getGuildInstance: id => guilds.get(id), updateGuildInstance() { return true; } },
     credentialsManager: { getCredentials: id => credentials[id], getCredentialSteamIds: () => [] } };
 require.cache[index] = { id: index, loaded: true, exports: app };
 const { LocaleManager } = require('../../dist/src/managers/LocaleManager');
@@ -52,7 +52,7 @@ async function setup(t, relay = false, type = rp.AppEntityType.Switch) {
     const alerts = [];
     const serverId = relay ? 'relay-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' : '127.0.0.1-' + port;
     relayEndpoint = 'ws://127.0.0.1:' + port;
-    const guild = { generalSettings: { language: 'en', inGameChatCommandPrefix: '!' },
+    const guild = { guildId, aliases: [], generalSettings: { language: 'en', inGameChatCommandPrefix: '!' },
         guildChannelIds: { servers: null, smartSwitches: channel, smartAlarms: channel,
             storageMonitors: channel, activity },
         serverInfoMap: {}, pairingDataMap: {},
@@ -89,7 +89,7 @@ async function setup(t, relay = false, type = rp.AppEntityType.Switch) {
                 }
             } else body = { error: { error: 'unsupported' } }; // Map setup can fail independently.
             const reply = () => send(socket, { response: { seq: request.seq, ...body } });
-            if (sim.hold && request.getEntityInfo) sim.pending = reply;
+            if ((sim.hold && request.getEntityInfo) || (sim.holdWrites && request.setEntityValue)) sim.pending = reply;
             else reply();
         });
     });
@@ -110,12 +110,13 @@ async function setup(t, relay = false, type = rp.AppEntityType.Switch) {
         await sleep(1); // Include a genuine edit/create race window.
         const id = existingId ?? 'card-' + (cards.size + 1);
         const embed = content.embeds[0].toJSON();
-        const button = content.components[0]?.toJSON().components[0];
-        cards.set(id, { button, state: embed.fields?.at(-1)?.value, embed });
+        const buttons = content.components[0]?.toJSON().components;
+        const button = buttons?.[0];
+        cards.set(id, { button, buttons, state: embed.fields?.at(-1)?.value, embed });
         return { id };
     };
     async function pair(entityId, account) {
-        if (isAlarm || isStorage) owners.set(entityId, [...new Set([owners.get(entityId), accounts[account]].flat())]);
+        owners.set(entityId, [...new Set([owners.get(entityId), accounts[account]].flat())]);
         const body = {
             ...(relay ? { id: serverId.slice(6) } : { ip: '127.0.0.1', port }),
             type: 'entity', entityType: String(type), entityId,

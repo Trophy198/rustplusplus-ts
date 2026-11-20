@@ -245,7 +245,9 @@ export async function sendServerMessage(dm: DiscordManager, guildId: types.Guild
         embeds: [discordEmbeds.getServerEmbed(guildId, serverId, connectionStatus)],
         components: [
             await discordSelectMenus.getRequesterSteamIdSelectMenu(dm, guildId, serverId),
-            discordButtons.getServerButtons(guildId, serverId, connectionStatus)]
+            discordButtons.getServerButtons(guildId, serverId, connectionStatus),
+            new discordjs.ActionRowBuilder<discordjs.ButtonBuilder>()
+                .addComponents(discordButtons.createSwitchGroupButton(gInstance))]
     };
 
     const message = await dm.sendUpdateMessage(guildId, content, gInstance.guildChannelIds.servers, serverInfo.
@@ -261,10 +263,63 @@ export async function sendServerMessage(dm: DiscordManager, guildId: types.Guild
 // Serialize creation and coalesce edits so a burst of broadcasts leaves one card with the latest value.
 const deviceCards = new Map<string, { dirty: boolean; done: Promise<void> }>();
 
-export function sendSmartSwitchMessage(dm: DiscordManager, guildId: types.GuildId, serverId: types.ServerId,
+export async function sendSmartSwitchMessage(dm: DiscordManager, guildId: types.GuildId, serverId: types.ServerId,
     entityId: types.EntityId): Promise<void> {
-    return queueDeviceCard(JSON.stringify(['switch', guildId, serverId, entityId]),
-        () => updateSmartSwitchCard(dm, guildId, serverId, entityId));
+    const groups = gim.getGuildInstance(guildId)?.serverInfoMap[serverId]?.smartSwitchGroupConfigMap ?? {};
+    await Promise.all([
+        queueDeviceCard(JSON.stringify(['switch', guildId, serverId, entityId]),
+            () => updateSmartSwitchCard(dm, guildId, serverId, entityId)),
+        ...Object.entries(groups).filter(([, group]) => group.smartSwitches.includes(entityId))
+            .map(([id]) => sendSmartSwitchGroupMessage(dm, guildId, serverId, id))
+    ]);
+}
+
+export function sendSmartSwitchGroupMessage(dm: DiscordManager, guildId: string, serverId: string, groupId: string) {
+    return queueDeviceCard(JSON.stringify(['switchGroup', guildId, serverId, groupId]), async () => {
+        const guild = gim.getGuildInstance(guildId);
+        const server = guild?.serverInfoMap[serverId];
+        const group = server?.smartSwitchGroupConfigMap[groupId];
+        const channel = guild?.guildChannelIds.smartSwitchGroups;
+        if (!guild || !server?.active || !group || !channel) return;
+        const lang = guild.generalSettings.language;
+        const instance = rpm.getInstance(guildId, serverId);
+        const members = [...new Set(group.smartSwitches)];
+        const lines = members.map(id => {
+            const value = instance?.smartSwitchValue(id);
+            const state = lm.getIntl(lang, value === undefined ? 'unknown' : value ? 'buttonOn' : 'buttonOff');
+            return `${server.smartSwitchConfigMap[id]?.name ?? id} · ${state}`;
+        });
+        const embed = new discordjs.EmbedBuilder().setTitle(group.name.slice(0, 256))
+            .setFooter({ text: server.name.slice(0, 2048) })
+            .setDescription(lines.join('\n').slice(0, 4096) || lm.getIntl(lang, 'groupEmpty'))
+            .addFields({ name: lm.getIntl(lang, 'switchCommand'),
+                value: lm.getIntl(lang, 'groupUsage', {
+                    command: `\`${guild.generalSettings.inGameChatCommandPrefix}${group.command}\``
+                }) });
+        const disabled = !members.length || instance?.connectionStatus !== ConnectionStatus.Connected;
+        const buttons = new discordjs.ActionRowBuilder<discordjs.ButtonBuilder>().addComponents(
+            new discordjs.ButtonBuilder().setCustomId('SwitchGroupOn').setLabel(lm.getIntl(lang, 'buttonOn'))
+                .setStyle(discordjs.ButtonStyle.Success).setDisabled(disabled),
+            new discordjs.ButtonBuilder().setCustomId('SwitchGroupOff').setLabel(lm.getIntl(lang, 'buttonOff'))
+                .setStyle(discordjs.ButtonStyle.Danger).setDisabled(disabled),
+            new discordjs.ButtonBuilder().setCustomId('SwitchGroup:edit').setLabel(lm.getIntl(lang, 'groupButton_edit'))
+                .setStyle(discordjs.ButtonStyle.Primary),
+            new discordjs.ButtonBuilder().setCustomId('SwitchGroup:add').setLabel(lm.getIntl(lang, 'groupButton_add'))
+                .setStyle(discordjs.ButtonStyle.Secondary),
+            new discordjs.ButtonBuilder().setCustomId('SwitchGroup:remove')
+                .setLabel(lm.getIntl(lang, 'groupButton_remove')).setStyle(discordjs.ButtonStyle.Secondary)
+                .setDisabled(!members.length));
+        const message = await dm.sendUpdateMessage(guildId, { embeds: [embed], components: [buttons] },
+            channel, group.messageId);
+        if (!message) return;
+        const current = gim.getGuildInstance(guildId)?.serverInfoMap[serverId];
+        if (!current?.active || current.smartSwitchGroupConfigMap[groupId] !== group) {
+            await dm.deleteMessage(guildId, channel, message.id);
+        } else if (group.messageId !== message.id) {
+            group.messageId = message.id;
+            gim.updateGuildInstance(guildId);
+        }
+    });
 }
 
 function queueDeviceCard(key: string, update: () => Promise<void>) {

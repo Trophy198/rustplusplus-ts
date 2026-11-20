@@ -214,9 +214,9 @@ async function setupChannel(dm: DiscordManager, interaction: discordjs.ChatInput
     else if (channelName === 'smartSwitches') {
         await dm.setupGuildSmartSwitchesChannel(guild, true, true);
     }
-    //else if (channelName === 'smartSwitchGroups') {
-    //	continue; // TODO! Implement smart switch groups setup function
-    //}
+    else if (channelName === 'smartSwitchGroups') {
+        await dm.setupGuildSmartSwitchGroupsChannel(guild);
+    }
     else if (channelName === 'smartAlarms') {
         await dm.setupGuildSmartAlarmsChannel(guild, true, true);
     }
