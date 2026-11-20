@@ -54,7 +54,7 @@ async function inGameChatTrademarkModalHandler(dm: DiscordManager, interaction: 
     gim.updateGuildInstance(guildId);
 
     await interaction.deferUpdate();
-    await discordMessages.sendSettingInGameChatTrademarkMessage(dm, guildId, true, false);
+    await discordMessages.updateSetting(dm, guildId, 'inGameChatTrademark');
 
     return true;
 }
@@ -71,7 +71,7 @@ async function inGameChatCommandPrefixModalHandler(dm: DiscordManager, interacti
     // TODO! Update smart devices embeds that show the prefix
 
     await interaction.deferUpdate();
-    await discordMessages.sendSettingInGameChatCommandPrefixMessage(dm, guildId, true, false);
+    await discordMessages.updateSetting(dm, guildId, 'inGameChatCommandPrefix');
 
     return true;
 }

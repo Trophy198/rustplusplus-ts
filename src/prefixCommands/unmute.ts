@@ -51,7 +51,7 @@ export async function execute(rpInstance: RustPlusInstance, args: string[],
 
     /* If value changed, update the setting in the settings channel in discord. */
     if (valueChanged) {
-        await discordMessages.sendSettingInGameChatBotUnmutedMessage(dm, guildId, true, false);
+        await discordMessages.updateSetting(dm, guildId, 'inGameChatBotUnmuted');
 
         response.push(lm.getIntl(language, 'inGameBotMessagesUnmuted'));
     }

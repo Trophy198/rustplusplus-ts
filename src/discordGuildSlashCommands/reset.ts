@@ -203,7 +203,7 @@ async function setupChannel(dm: DiscordManager, interaction: discordjs.ChatInput
         });
         gim.updateGuildInstance(guild.id);
 
-        await dm.setupGuildSettingsChannel(guild, true, true);
+        await dm.setupGuildSettingsChannel(guild);
     }
     else if (channelName === 'servers') {
         await dm.setupGuildServersChannel(guild, true, true);

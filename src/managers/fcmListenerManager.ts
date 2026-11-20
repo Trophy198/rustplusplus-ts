@@ -630,24 +630,10 @@ async function alarmPlugin(flm: FcmListenerManager, steamId: types.SteamId, titl
             continue;
         }
 
-        if (gInstance.generalSettings.fcmAlarmPluginNotify && steamId === serverInfo.requesterSteamId) {
-            if ((gInstance.generalSettings.fcmAlarmPluginNotifyActiveServer && serverInfo.active) ||
-                !gInstance.generalSettings.fcmAlarmPluginNotifyActiveServer) {
-                discordMessages.sendFcmAlarmPluginTriggerMessage(flm.dm, guildId, serverId, title, message);
-            }
-
-            /* Send messages in game if configured. */
-            if (gInstance.generalSettings.fcmAlarmPluginNotifyInGame) {
-                for (const [sId, content] of Object.entries(gInstance.serverInfoMap)) {
-                    const rpInstance = rpm.getInstance(guildId, sId);
-                    if (rpInstance && content.active) {
-                        if ((gInstance.generalSettings.fcmAlarmPluginNotifyActiveServer && serverInfo.active) ||
-                            !gInstance.generalSettings.fcmAlarmPluginNotifyActiveServer) {
-                            // TODO! Send to in-game chat notification for the raid alarm plugin
-                        }
-                    }
-                }
-            }
+        const settings = gInstance.generalSettings;
+        if (settings.fcmAlarmPluginNotify && steamId === serverInfo.requesterSteamId &&
+            (!settings.fcmAlarmPluginNotifyActiveServer || serverInfo.active)) {
+            await discordMessages.sendFcmAlarmPluginTriggerMessage(flm.dm, guildId, serverId, title, message);
         }
     }
 }

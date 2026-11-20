@@ -404,7 +404,7 @@
     "samsite": "SAM site",
     "settingFcmAlarmNotifyDesc": "When enabled, Smart Alarms that are not part of the currently connected server can send notifications. These notifications uses the title and message given to the Smart Alarm in-game. These Smart Alarms might not be present in the smartalarms Text-Channel in discord.",
     "settingFcmAlarmNotifyTitle": "Smart Alarms FCM Notifications",
-    "settingFcmAlarmPluginNotifyDesc": "Manage notifications for the Raid Alarm plugin. Enable alerts for Discord, in-game chat, @everyone mentions, and if notifications should only come from the currently active server.\n\n{link}",
+    "settingFcmAlarmPluginNotifyDesc": "Manage notifications for the Raid Alarm plugin. Choose whether to send Discord alerts, mention @everyone, or limit alerts to the active server.\n\n{link}",
     "settingFcmAlarmPluginNotifyTitle": "Raid Alarm Plugin Notifications",
     "settingInGameChatBotUnmutedDesc": "The bot will still process commands, but it will not send any messages to the in-game chat.",
     "settingInGameChatBotUnmutedTitle": "Mute the Bot in In-Game Chat?",

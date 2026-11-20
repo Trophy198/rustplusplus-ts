@@ -28,7 +28,7 @@ import {
     rustPlusManager as rpm
 } from '../../index';
 import * as types from '../utils/types';
-import { GuildInstance, GuildChannelIds, EventNotificationSettings } from './guildInstanceManager';
+import { GuildInstance, GuildChannelIds, SettingsMessages } from './guildInstanceManager';
 import { channelPermissions } from '../templates/channelPermissionsTemplate';
 import * as discordMessages from '../discordUtils/discordMessages';
 import { ConnectionStatus } from './rustPlusManager';
@@ -52,6 +52,7 @@ export class DiscordManager {
     public languageChangeTimeoutIds: types.GuildId[] = [];
     public tryAgainLaterTimeoutIds: Map<string, NodeJS.Timeout> = new Map();
 
+    private readonly settingsUpdates = new Map<types.GuildId, Promise<void>>();
     public connectionStarted: string[];
 
     constructor() {
@@ -262,7 +263,7 @@ export class DiscordManager {
         }
     }
 
-    public async setupGuild(guild: discordjs.Guild, enforcePermissions: boolean = false) {
+    public async setupGuild(guild: discordjs.Guild, enforcePermissions: boolean = false, refreshSettings = false) {
         const gInstance = gim.getGuildInstance(guild.id) as GuildInstance;
 
         /* Check if any roles are missing. */
@@ -294,7 +295,7 @@ export class DiscordManager {
         await this.setupGuildCategory(guild, enforcePermissions);
         await this.setupGuildChannels(guild, enforcePermissions);
 
-        await this.setupGuildSettingsChannel(guild, false);
+        await this.setupGuildSettingsChannel(guild, refreshSettings);
         await this.setupGuildServersChannel(guild, true);
         await this.setupGuildSmartSwitchesChannel(guild, true);
         await this.setupGuildSmartAlarmsChannel(guild, true);
@@ -387,46 +388,74 @@ export class DiscordManager {
         gInstance.guildChannelIds[channelName] = channel ? channel.id : null;
     }
 
-    public async setupGuildSettingsChannel(guild: discordjs.Guild, update: boolean = true, create: boolean = false) {
-        /* If all settings messages are null, then send all settings messages. */
-        const gInstance = gim.getGuildInstance(guild.id) as GuildInstance;
-        if (Object.values(gInstance.settingsMessages).every(value => value === null)) {
-            create = true;
+    public async setupGuildSettingsChannel(guild: discordjs.Guild, update = true) {
+        const sync = () => this.syncSettingsCards(guild.id, update);
+        const previous = this.settingsUpdates.get(guild.id);
+        const pending = previous ? previous.then(sync, sync) : sync();
+        this.settingsUpdates.set(guild.id, pending);
+        try {
+            await pending;
+        } finally {
+            if (this.settingsUpdates.get(guild.id) === pending) this.settingsUpdates.delete(guild.id);
         }
+    }
 
-        if (!('settings' in gInstance.guildChannelIds)) {
-            log.warn(`Could not find settings channel.`, { guildId: guild.id });
-            return;
+    private async syncSettingsCards(guildId: types.GuildId, update: boolean) {
+        const instance = gim.getGuildInstance(guildId);
+        const channelId = instance?.guildChannelIds.settings;
+        const botId = this.client.user?.id;
+        if (!instance || !channelId || !botId) return;
+        const channel = await this.getChannel(guildId, channelId);
+        if (channel?.type !== discordjs.ChannelType.GuildText) return;
+
+        const messages = instance.settingsMessages;
+        const keys = Object.keys(messages) as (keyof SettingsMessages)[];
+        const active = Object.keys(discordMessages.settingsCards) as (keyof typeof discordMessages.settingsCards)[];
+        const activeIds = new Set(active.map(key => messages[key]));
+        const retired = keys.filter(key => !discordMessages.isSettingsCard(key) && messages[key]);
+        for (const key of [...active, ...retired]) {
+            if (instance.guildChannelIds.settings !== channelId) return;
+            const id = messages[key];
+            try {
+                // A retired reference must never delete a message that still serves an active setting.
+                const shared = !discordMessages.isSettingsCard(key) && activeIds.has(id);
+                let message;
+                if (id && !shared) {
+                    try {
+                        message = await channel.messages.fetch({ message: id, force: true, cache: false });
+                    } catch (error) {
+                        if (!(error instanceof discordjs.DiscordAPIError &&
+                            error.code === discordjs.RESTJSONErrorCodes.UnknownMessage)) throw error;
+                    }
+                }
+                if (instance.guildChannelIds.settings !== channelId) return;
+                const own = message?.author.id === botId ? message : undefined;
+                let nextId = null;
+                if (discordMessages.isSettingsCard(key)) {
+                    // Upgrade the existing Raid Alarm card in place on the first startup after migration.
+                    const hasOldButton = key === 'fcmAlarmPluginNotify' && own?.components.some(row =>
+                        row.type === discordjs.ComponentType.ActionRow && row.components.some(component =>
+                            'customId' in component &&
+                            component.customId === 'GeneralSetting-fcmAlarmPluginNotifyInGame'));
+                    if (!own) {
+                        nextId = (await channel.send(discordMessages.settingsCards[key](guildId))).id;
+                    } else {
+                        if (update || hasOldButton) await own.edit(discordMessages.settingsCards[key](guildId));
+                        nextId = own.id;
+                    }
+                } else if (own) {
+                    await own.delete();
+                }
+                if (instance.guildChannelIds.settings !== channelId) return;
+                if (id !== nextId) {
+                    messages[key] = nextId;
+                    gim.updateGuildInstance(guildId);
+                }
+            } catch (error) {
+                // Keep the stored ID on network and permission errors so the next setup can retry safely.
+                log.warn(`Could not synchronize settings card '${key}', ${error}`, { guildId });
+            }
         }
-
-        if (!update && !create) return;
-
-        /* General Settings */
-        await discordMessages.sendSettingGeneralSettingsHeaderMessage(this, guild.id, update, create);
-        await discordMessages.sendSettingLanguageMessage(this, guild.id, update, create);
-        await discordMessages.sendSettingVoiceGenderMessage(this, guild.id, update, create);
-        await discordMessages.sendSettingInGameChatFunctionalityEnabledMessage(this, guild.id, update, create);
-        await discordMessages.sendSettingInGameChatBotUnmutedMessage(this, guild.id, update, create);
-        await discordMessages.sendSettingInGameChatTrademarkMessage(this, guild.id, update, create);
-        await discordMessages.sendSettingInGameChatCommandPrefixMessage(this, guild.id, update, create);
-        await discordMessages.sendSettingInGameChatCommandsEnabledMessage(this, guild.id, update, create);
-        await discordMessages.sendSettingInGameChatMessageDelayMessage(this, guild.id, update, create);
-        await discordMessages.sendSettingLeaderCommandMessage(this, guild.id, update, create);
-        await discordMessages.sendSettingInGameChatNotifySmartSwitchChangedFromDiscordMessage(this, guild.id, update,
-            create);
-        await discordMessages.sendSettingInGameChatNotifyMessage(this, guild.id, update, create);
-        await discordMessages.sendSettingMapWipeNotifyEveryoneMessage(this, guild.id, update, create);
-        await discordMessages.sendSettingFcmAlarmNotifyMessage(this, guild.id, update, create);
-        await discordMessages.sendSettingFcmAlarmPluginNotifyMessage(this, guild.id, update, create);
-
-        /* Event Notification Settings */
-        await discordMessages.sendSettingEventNotificationSettingsHeaderMessage(this, guild.id, update, create);
-        for (const setting of Object.keys(gInstance.eventNotificationSettings) as
-            Array<keyof EventNotificationSettings>) {
-            await discordMessages.sendSettingEventNotificationSettingMessage(this, guild.id, setting, update, create);
-        }
-
-        gim.updateGuildInstance(guild.id);
     }
 
     public async setupGuildServersChannel(guild: discordjs.Guild, update: boolean = true, create: boolean = false) {

@@ -25,7 +25,7 @@ import { guildInstanceManager as gim, rustPlusManager as rpm, localeManager as l
 import { ConnectionStatus } from '../managers/rustPlusManager';
 import { DiscordManager } from "../managers/discordManager";
 import * as types from '../utils/types';
-import { EventNotificationSettings, GuildInstance } from '../managers/guildInstanceManager';
+import { GuildInstance } from '../managers/guildInstanceManager';
 import * as discordMessages from '../discordUtils/discordMessages';
 import * as discordModals from '../discordUtils/discordModals';
 
@@ -35,7 +35,7 @@ export async function buttonHandler(dm: DiscordManager, interaction: discordjs.B
     if (switchAction) {
         return handleSmartSwitch(dm, interaction, switchAction[1], switchAction[2]);
     }
-    /* GeneralSettings / EventNotificationSettings */
+    /* General settings */
     if (interaction.customId === 'GeneralSetting-inGameChatFunctionalityEnabled') {
         return await inGameChatFunctionalityEnabledButtonHandler(dm, interaction);
     }
@@ -51,12 +51,6 @@ export async function buttonHandler(dm: DiscordManager, interaction: discordjs.B
     else if (interaction.customId === 'GeneralSetting-inGameChatCommandsEnabled') {
         return await inGameChatCommandsEnabledButtonHandler(dm, interaction);
     }
-    else if (interaction.customId === 'GeneralSetting-leaderCommandEnabled') {
-        return await leaderCommandEnabledButtonHandler(dm, interaction);
-    }
-    else if (interaction.customId === 'GeneralSetting-leaderCommandOnlyPaired') {
-        return await leaderCommandOnlyPairedButtonHandler(dm, interaction);
-    }
     else if (interaction.customId === 'GeneralSetting-inGameChatNotifySmartSwitchChangedFromDiscord') {
         return await inGameChatNotifySmartSwitchChangedFromDiscordButtonHandler(dm, interaction);
     }
@@ -68,9 +62,6 @@ export async function buttonHandler(dm: DiscordManager, interaction: discordjs.B
     }
     else if (interaction.customId === 'GeneralSetting-inGameChatNotifyDeath') {
         return await inGameChatNotifyDeathButtonHandler(dm, interaction);
-    }
-    else if (interaction.customId === 'GeneralSetting-mapWipeNotifyEveryone') {
-        return await mapWipeNotifyEveryoneButtonHandler(dm, interaction);
     }
     else if (interaction.customId === 'GeneralSetting-fcmAlarmNotify') {
         return await fcmAlarmNotifyButtonHandler(dm, interaction);
@@ -84,14 +75,14 @@ export async function buttonHandler(dm: DiscordManager, interaction: discordjs.B
     else if (interaction.customId === 'GeneralSetting-fcmAlarmPluginNotifyEveryone') {
         return await fcmAlarmPluginNotifyEveryoneButtonHandler(dm, interaction);
     }
-    else if (interaction.customId === 'GeneralSetting-fcmAlarmPluginNotifyInGame') {
-        return await fcmAlarmPluginNotifyInGameButtonHandler(dm, interaction);
-    }
     else if (interaction.customId === 'GeneralSetting-fcmAlarmPluginNotifyActiveServer') {
         return await fcmAlarmPluginNotifyActiveServerButtonHandler(dm, interaction);
     }
-    else if (interaction.customId.startsWith('EventNotificationSetting-')) {
-        return await eventNotificationSettingButtonHandler(dm, interaction);
+    // A cached Discord card can send a retired setting while the menu is being updated.
+    else if (interaction.customId.startsWith('GeneralSetting-') ||
+        interaction.customId.startsWith('EventNotificationSetting-')) {
+        await interaction.deferUpdate();
+        return false;
     }
     /* Servers Channel buttons */
     else if (interaction.customId.startsWith('ServerConnecting') ||
@@ -153,7 +144,7 @@ async function handleSmartSwitch(dm: DiscordManager, interaction: discordjs.Butt
 }
 
 /**
- * General Settings / Event Notification Settings
+ * General settings
  */
 
 async function inGameChatFunctionalityEnabledButtonHandler(dm: DiscordManager,
@@ -165,7 +156,7 @@ async function inGameChatFunctionalityEnabledButtonHandler(dm: DiscordManager,
         !gInstance.generalSettings.inGameChatFunctionalityEnabled;
     gim.updateGuildInstance(guildId);
 
-    await discordMessages.sendSettingInGameChatFunctionalityEnabledMessage(dm, guildId, true, false, interaction);
+    await discordMessages.updateSetting(dm, guildId, 'inGameChatFunctionalityEnabled', interaction);
 
     return true;
 }
@@ -178,7 +169,7 @@ async function inGameChatBotUnmutedButtonHandler(dm: DiscordManager,
     gInstance.generalSettings.inGameChatBotUnmuted = !gInstance.generalSettings.inGameChatBotUnmuted;
     gim.updateGuildInstance(guildId);
 
-    await discordMessages.sendSettingInGameChatBotUnmutedMessage(dm, guildId, true, false, interaction);
+    await discordMessages.updateSetting(dm, guildId, 'inGameChatBotUnmuted', interaction);
 
     return true;
 }
@@ -211,33 +202,7 @@ async function inGameChatCommandsEnabledButtonHandler(dm: DiscordManager,
     gInstance.generalSettings.inGameChatCommandsEnabled = !gInstance.generalSettings.inGameChatCommandsEnabled;
     gim.updateGuildInstance(guildId);
 
-    await discordMessages.sendSettingInGameChatCommandsEnabledMessage(dm, guildId, true, false, interaction);
-
-    return true;
-}
-
-async function leaderCommandEnabledButtonHandler(dm: DiscordManager,
-    interaction: discordjs.ButtonInteraction): Promise<boolean> {
-    const guildId = interaction.guildId as types.GuildId;
-    const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-
-    gInstance.generalSettings.leaderCommandEnabled = !gInstance.generalSettings.leaderCommandEnabled;
-    gim.updateGuildInstance(guildId);
-
-    await discordMessages.sendSettingLeaderCommandMessage(dm, guildId, true, false, interaction);
-
-    return true;
-}
-
-async function leaderCommandOnlyPairedButtonHandler(dm: DiscordManager,
-    interaction: discordjs.ButtonInteraction): Promise<boolean> {
-    const guildId = interaction.guildId as types.GuildId;
-    const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-
-    gInstance.generalSettings.leaderCommandOnlyPaired = !gInstance.generalSettings.leaderCommandOnlyPaired;
-    gim.updateGuildInstance(guildId);
-
-    await discordMessages.sendSettingLeaderCommandMessage(dm, guildId, true, false, interaction);
+    await discordMessages.updateSetting(dm, guildId, 'inGameChatCommandsEnabled', interaction);
 
     return true;
 }
@@ -251,8 +216,7 @@ async function inGameChatNotifySmartSwitchChangedFromDiscordButtonHandler(dm: Di
         !gInstance.generalSettings.inGameChatNotifySmartSwitchChangedFromDiscord;
     gim.updateGuildInstance(guildId);
 
-    await discordMessages.sendSettingInGameChatNotifySmartSwitchChangedFromDiscordMessage(dm, guildId, true, false,
-        interaction);
+    await discordMessages.updateSetting(dm, guildId, 'inGameChatNotifySmartSwitchChangedFromDiscord', interaction);
 
     return true;
 }
@@ -265,7 +229,7 @@ async function inGameChatNotifyConnectionButtonHandler(dm: DiscordManager,
     gInstance.generalSettings.inGameChatNotifyConnection = !gInstance.generalSettings.inGameChatNotifyConnection;
     gim.updateGuildInstance(guildId);
 
-    await discordMessages.sendSettingInGameChatNotifyMessage(dm, guildId, true, false, interaction);
+    await discordMessages.updateSetting(dm, guildId, 'inGameChatNotify', interaction);
 
     return true;
 }
@@ -278,7 +242,7 @@ async function inGameChatNotifyAfkButtonHandler(dm: DiscordManager,
     gInstance.generalSettings.inGameChatNotifyAfk = !gInstance.generalSettings.inGameChatNotifyAfk;
     gim.updateGuildInstance(guildId);
 
-    await discordMessages.sendSettingInGameChatNotifyMessage(dm, guildId, true, false, interaction);
+    await discordMessages.updateSetting(dm, guildId, 'inGameChatNotify', interaction);
 
     return true;
 }
@@ -291,20 +255,7 @@ async function inGameChatNotifyDeathButtonHandler(dm: DiscordManager,
     gInstance.generalSettings.inGameChatNotifyDeath = !gInstance.generalSettings.inGameChatNotifyDeath;
     gim.updateGuildInstance(guildId);
 
-    await discordMessages.sendSettingInGameChatNotifyMessage(dm, guildId, true, false, interaction);
-
-    return true;
-}
-
-async function mapWipeNotifyEveryoneButtonHandler(dm: DiscordManager,
-    interaction: discordjs.ButtonInteraction): Promise<boolean> {
-    const guildId = interaction.guildId as types.GuildId;
-    const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-
-    gInstance.generalSettings.mapWipeNotifyEveryone = !gInstance.generalSettings.mapWipeNotifyEveryone;
-    gim.updateGuildInstance(guildId);
-
-    await discordMessages.sendSettingMapWipeNotifyEveryoneMessage(dm, guildId, true, false, interaction);
+    await discordMessages.updateSetting(dm, guildId, 'inGameChatNotify', interaction);
 
     return true;
 }
@@ -317,7 +268,7 @@ async function fcmAlarmNotifyButtonHandler(dm: DiscordManager,
     gInstance.generalSettings.fcmAlarmNotify = !gInstance.generalSettings.fcmAlarmNotify;
     gim.updateGuildInstance(guildId);
 
-    await discordMessages.sendSettingFcmAlarmNotifyMessage(dm, guildId, true, false, interaction);
+    await discordMessages.updateSetting(dm, guildId, 'fcmAlarmNotify', interaction);
 
     return true;
 }
@@ -330,7 +281,7 @@ async function fcmAlarmNotifyEveryoneButtonHandler(dm: DiscordManager,
     gInstance.generalSettings.fcmAlarmNotifyEveryone = !gInstance.generalSettings.fcmAlarmNotifyEveryone;
     gim.updateGuildInstance(guildId);
 
-    await discordMessages.sendSettingFcmAlarmNotifyMessage(dm, guildId, true, false, interaction);
+    await discordMessages.updateSetting(dm, guildId, 'fcmAlarmNotify', interaction);
 
     return true;
 }
@@ -343,7 +294,7 @@ async function fcmAlarmPluginNotifyButtonHandler(dm: DiscordManager,
     gInstance.generalSettings.fcmAlarmPluginNotify = !gInstance.generalSettings.fcmAlarmPluginNotify;
     gim.updateGuildInstance(guildId);
 
-    await discordMessages.sendSettingFcmAlarmPluginNotifyMessage(dm, guildId, true, false, interaction);
+    await discordMessages.updateSetting(dm, guildId, 'fcmAlarmPluginNotify', interaction);
 
     return true;
 }
@@ -356,20 +307,7 @@ async function fcmAlarmPluginNotifyEveryoneButtonHandler(dm: DiscordManager,
     gInstance.generalSettings.fcmAlarmPluginNotifyEveryone = !gInstance.generalSettings.fcmAlarmPluginNotifyEveryone;
     gim.updateGuildInstance(guildId);
 
-    await discordMessages.sendSettingFcmAlarmPluginNotifyMessage(dm, guildId, true, false, interaction);
-
-    return true;
-}
-
-async function fcmAlarmPluginNotifyInGameButtonHandler(dm: DiscordManager,
-    interaction: discordjs.ButtonInteraction): Promise<boolean> {
-    const guildId = interaction.guildId as types.GuildId;
-    const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-
-    gInstance.generalSettings.fcmAlarmPluginNotifyInGame = !gInstance.generalSettings.fcmAlarmPluginNotifyInGame;
-    gim.updateGuildInstance(guildId);
-
-    await discordMessages.sendSettingFcmAlarmPluginNotifyMessage(dm, guildId, true, false, interaction);
+    await discordMessages.updateSetting(dm, guildId, 'fcmAlarmPluginNotify', interaction);
 
     return true;
 }
@@ -383,35 +321,7 @@ async function fcmAlarmPluginNotifyActiveServerButtonHandler(dm: DiscordManager,
         !gInstance.generalSettings.fcmAlarmPluginNotifyActiveServer;
     gim.updateGuildInstance(guildId);
 
-    await discordMessages.sendSettingFcmAlarmPluginNotifyMessage(dm, guildId, true, false, interaction);
-
-    return true;
-}
-
-async function eventNotificationSettingButtonHandler(dm: DiscordManager,
-    interaction: discordjs.ButtonInteraction): Promise<boolean> {
-    const guildId = interaction.guildId as types.GuildId;
-    const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-
-    const parts = interaction.customId.split('-');
-    const typeString = parts[1];
-    const setting = parts[2] as keyof EventNotificationSettings;
-
-    const validTypes = ['discord', 'inGame', 'voice'] as const;
-
-    if (!validTypes.includes(typeString as typeof validTypes[number]) ||
-        !(setting in gInstance.eventNotificationSettings)) {
-        interaction.deferUpdate();
-        return false;
-    }
-
-    const type = typeString as 'discord' | 'inGame' | 'voice';
-
-    gInstance.eventNotificationSettings[setting][type] =
-        !gInstance.eventNotificationSettings[setting][type];
-    gim.updateGuildInstance(guildId);
-
-    await discordMessages.sendSettingEventNotificationSettingMessage(dm, guildId, setting, true, false, interaction);
+    await discordMessages.updateSetting(dm, guildId, 'fcmAlarmPluginNotify', interaction);
 
     return true;
 }

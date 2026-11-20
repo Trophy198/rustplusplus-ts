@@ -105,7 +105,7 @@ async function languageSelectMenuHandler(dm: DiscordManager, interaction: discor
         await dm.renameChannel(guildId, value, newName);
     }
 
-    await dm.setupGuild(guild);
+    await dm.setupGuild(guild, false, true);
 
     // TODO! Loop through servers, smartswitches, smartalarms, storageMonitors, smartswitchgroups, trackers
 
@@ -121,7 +121,7 @@ async function voiceGenderSelectMenuHandler(dm: DiscordManager, interaction: dis
     gInstance.generalSettings.voiceGender = selectedGender;
     gim.updateGuildInstance(guildId);
 
-    await discordMessages.sendSettingVoiceGenderMessage(dm, guildId, true, false, interaction);
+    await discordMessages.updateSetting(dm, guildId, 'voiceGender', interaction);
 
     return true;
 }
@@ -135,7 +135,7 @@ async function inGameChatMessageDelaySelectMenuHandler(dm: DiscordManager,
     gInstance.generalSettings.inGameChatMessageDelay = Number(commandResponseDelay);
     gim.updateGuildInstance(guildId);
 
-    await discordMessages.sendSettingInGameChatMessageDelayMessage(dm, guildId, true, false, interaction);
+    await discordMessages.updateSetting(dm, guildId, 'inGameChatMessageDelay', interaction);
 
     return true;
 }
