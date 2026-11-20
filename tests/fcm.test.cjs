@@ -142,6 +142,31 @@ test('two credentials receive only their subscriptions through replacement, remo
     await tick();
     assert.deepEqual(sent, [['channel0', 'A'], ['channel1', 'B']]);
 
+    const storageServer = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+    const monitor = { type: 'entity', entityType: '3', entityName: 'Storage Monitor', id: storageServer, entityId,
+        name: 'Storage server', desc: '', img: '', logo: '', url: '' };
+    const pairMonitor = (socket, key, account, device = entityId) => frame(socket, key, 'pair', 'pairing', {
+        ...monitor, entityId: device, playerId: accounts[account], playerToken: String(100 + account)
+    });
+    pairMonitor(first, 'storage-first', 0);
+    await tick();
+    for (const guild of guilds) {
+        const device = guild.serverInfoMap['relay-' + storageServer].storageMonitorConfigMap[entityId];
+        device.messageId = 'my-storage-card';
+        device.name = 'West TC';
+    }
+    pairMonitor(second, 'storage-second', 1);
+    pairMonitor(second, 'storage-repeat', 1);
+    pairMonitor(first, 'storage-other-owner', 1, '21');
+    await tick();
+    for (const guild of guilds) {
+        const devices = guild.serverInfoMap['relay-' + storageServer].storageMonitorConfigMap;
+        assert.deepEqual(Object.keys(devices), [entityId]);
+        assert.deepEqual(devices[entityId].pairedSteamIds, accounts);
+        assert.equal(devices[entityId].messageId, 'my-storage-card');
+        assert.equal(devices[entityId].name, 'West TC');
+    }
+
     const alarm = { type: 'entity', entityType: '2', entityName: 'Smart Alarm', entityId, id,
         name: 'Server', desc: '', img: '', logo: '', url: '' };
     for (const [i, socket] of [first, second].entries()) {

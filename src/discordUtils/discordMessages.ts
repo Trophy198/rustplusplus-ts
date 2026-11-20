@@ -352,47 +352,31 @@ export function sendSmartAlarmMessage(dm: DiscordManager, guildId: types.GuildId
     });
 }
 
-export async function sendStorageMonitorMessage(dm: DiscordManager, guildId: types.GuildId, serverId: types.ServerId,
-    entityId: types.EntityId, interaction: discordjs.Interaction | null = null) {
-    const fn = `[sendStorageMonitorMessage]`;
-    const logParam = {
-        guildId: guildId,
-        serverId: serverId
-    };
-
-    const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-
-    const serverInfo = gInstance.serverInfoMap[serverId];
-    if (!serverInfo) {
-        log.warn(`${fn} Could not find ServerInfo.`, logParam);
-        return;
-    }
-
-    const storageMonitorConfig = serverInfo.storageMonitorConfigMap[entityId];
-    if (!storageMonitorConfig) {
-        log.warn(`${fn} Could not find StorageMonitorConfig '${entityId}'.`, logParam);
-        return;
-    }
-
-    const content = {
-        embeds: [discordEmbeds.getStorageMonitorEmbed(guildId, serverId, entityId)],
-        components: [
-            discordButtons.getStorageMonitorButtons(guildId, serverId, entityId)
-        ],
-        files: [
-            new discordjs.AttachmentBuilder(path.join(__dirname, '..', 'resources', 'images', 'electrics',
-                storageMonitorConfig.img))
-        ]
-    };
-
-    const message = await dm.sendUpdateMessage(guildId, content, gInstance.guildChannelIds.storageMonitors,
-        storageMonitorConfig.messageId, interaction);
-
-    if (interaction === null && message instanceof discordjs.Message &&
-        storageMonitorConfig.messageId !== message.id) {
-        storageMonitorConfig.messageId = message.id;
-        gim.updateGuildInstance(guildId);
-    }
+export function sendStorageMonitorMessage(dm: DiscordManager, guildId: types.GuildId, serverId: types.ServerId,
+    entityId: types.EntityId) {
+    return queueDeviceCard(JSON.stringify(['storage', guildId, serverId, entityId]), async () => {
+        const guild = gim.getGuildInstance(guildId);
+        const server = guild?.serverInfoMap[serverId];
+        const device = server?.storageMonitorConfigMap[entityId];
+        const channelId = guild?.guildChannelIds.storageMonitors;
+        if (!server?.active || !device || !channelId) return;
+        const payload = rpm.getInstance(guildId, serverId)?.storageMonitors.value(entityId);
+        const content = {
+            embeds: [discordEmbeds.getStorageMonitorEmbed(guildId, serverId, entityId, payload)],
+            components: [],
+            files: [new discordjs.AttachmentBuilder(path.join(__dirname, '..', 'resources', 'images', 'electrics',
+                device.img))]
+        };
+        const message = await dm.sendUpdateMessage(guildId, content, channelId, device.messageId);
+        if (!message) return;
+        const current = gim.getGuildInstance(guildId)?.serverInfoMap[serverId];
+        if (!current?.active || current.storageMonitorConfigMap[entityId] !== device) {
+            await dm.deleteMessage(guildId, channelId, message.id);
+        } else if (device.messageId !== message.id) {
+            device.messageId = message.id;
+            gim.updateGuildInstance(guildId);
+        }
+    });
 }
 
 export async function sendInformationChannelMapMessage(dm: DiscordManager, rpInstance: RustPlusInstance,

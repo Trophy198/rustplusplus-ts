@@ -34,6 +34,7 @@ import {
     GuildInstance, EventNotificationSettings, ServerInfo
 } from './guildInstanceManager';
 import { sendServerMessage } from '../discordUtils/discordMessages';
+import { StorageMonitors } from '../handlers/storageMonitorHandler';
 import { deliverSmartAlarm } from '../handlers/smartAlarmHandler';
 import * as rpTeamInfoHandler from '../handlers/rustPlusTeamInfoHandler';
 import * as rpInfoHandler from '../handlers/rustPlusInfoHandler';
@@ -143,6 +144,8 @@ export class RustPlusInstance {
     private switchStates = new Map<types.EntityId, { value: boolean }>();
     private switchRequests = new Map<types.EntityId, Promise<boolean>>();
     private alarmStates = new Map<types.EntityId, { version: number; value: boolean; disconnectedAt?: number }>();
+    public readonly storageMonitors = new StorageMonitors(this,
+        id => this.devicePairing(id, 'storageMonitorConfigMap'));
     private alarmRetries = new Set<types.EntityId>();
     private alarmReads = new Map<types.EntityId, { version: number; owner?: string; token?: number;
         done: Promise<void> }>();
@@ -309,7 +312,9 @@ export class RustPlusInstance {
                 ...Object.keys(server?.smartSwitchConfigMap ?? {}).map(id =>
                     discordMessages.sendSmartSwitchMessage(dm, this.guildId, this.serverId, id)),
                 ...Object.keys(server?.smartAlarmConfigMap ?? {}).map(id =>
-                    discordMessages.sendSmartAlarmMessage(dm, this.guildId, this.serverId, id))
+                    discordMessages.sendSmartAlarmMessage(dm, this.guildId, this.serverId, id)),
+                ...Object.keys(server?.storageMonitorConfigMap ?? {}).map(id =>
+                    discordMessages.sendStorageMonitorMessage(dm, this.guildId, this.serverId, id))
             ]);
         }
         await closing;
@@ -397,11 +402,14 @@ export class RustPlusInstance {
 
     public stopServerPollingHandler() {
         ++this.pollVersion;
+        this.storageMonitors.clear();
         clearInterval(this.serverPollingHandlerIntervalId);
         this.serverPollingHandlerIntervalId = undefined;
     }
 
     private async serverPolling(version: number, initialInfo?: rp.AppInfo) {
+        await this.storageMonitors.poll();
+        if (version !== this.pollVersion) return;
         // Retry one failed device subscription per poll without creating another timer or re-reading healthy alarms.
         const retry = this.alarmRetries.values().next();
         if (!retry.done) {
@@ -457,8 +465,6 @@ export class RustPlusInstance {
         (this.rpInfo as RustPlusInfo).updateInfo(info);
         (this.rpTime as RustPlusTime).updateTime(time);
         (this.rpMapMarkers as RustPlusMapMarkers).updateMapMarkers(mapMarkers);
-
-        // TODO! storageMonitorHandler
 
         // TODO! informationChannelHandler
         await informationChannelHandler.handler(this, () => version === this.pollVersion);
@@ -726,11 +732,13 @@ export class RustPlusInstance {
         };
         await Promise.all([
             restore(Object.keys(server?.smartSwitchConfigMap ?? {}), id => this.requestSmartSwitch(id)),
-            restore(Object.keys(server?.smartAlarmConfigMap ?? {}), id => this.refreshSmartAlarm(id))
+            restore(Object.keys(server?.smartAlarmConfigMap ?? {}), id => this.refreshSmartAlarm(id)),
+            restore(Object.keys(server?.storageMonitorConfigMap ?? {}), id => this.storageMonitors.refresh(id))
         ]);
     }
 
-    private devicePairing(entityId: types.EntityId, devices: 'smartAlarmConfigMap' | 'smartSwitchConfigMap') {
+    private devicePairing(entityId: types.EntityId,
+        devices: 'smartAlarmConfigMap' | 'smartSwitchConfigMap' | 'storageMonitorConfigMap') {
         const guild = gim.getGuildInstance(this.guildId);
         const server = guild?.serverInfoMap[this.serverId];
         const device = server?.[devices]?.[entityId];
@@ -794,8 +802,10 @@ export class RustPlusInstance {
         }
     }
 
-    public async entityChanged(entityId: string, value: boolean) {
+    public async entityChanged(entityId: string, payload: rp.AppEntityPayload) {
+        const value = payload.value;
         const server = gim.getGuildInstance(this.guildId)?.serverInfoMap[this.serverId];
+        if (server?.storageMonitorConfigMap?.[entityId]) return this.storageMonitors.changed(entityId, payload);
         const alarm = server?.smartAlarmConfigMap?.[entityId];
         if (!alarm) return this.smartSwitchChanged(entityId, value);
         if (!this.devicePairing(entityId, 'smartAlarmConfigMap')) return;

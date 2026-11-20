@@ -340,6 +340,7 @@ export interface SmartAlarmConfig {
 export interface StorageMonitorConfig {
     /* From FCM notification */
     entityId: types.EntityId;
+    pairedSteamIds?: types.SteamId[];
     /* Rest */
     messageId: types.MessageId | null;
     pairedDate: types.Timestamp;
@@ -1664,11 +1665,14 @@ export function isValidStorageMonitorConfig(object: unknown): object is StorageM
     errors.push(vu.validateType('inGame', obj.inGame, 'boolean'));
     errors.push(vu.validateInterface('type', obj.type, isValidStorageMonitorConfigType));
 
+    if (obj.pairedSteamIds !== undefined) {
+        errors.push(vu.validateArrayOfTypes('pairedSteamIds', obj.pairedSteamIds, 'string'));
+    }
     const filteredErrors = errors.filter((error): error is vu.ValidationError => error !== null);
 
     const objectKeys = Object.keys(object);
     const missingKeys = validKeys.filter(key => !objectKeys.includes(key));
-    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key));
+    const unknownKeys = objectKeys.filter(key => !validKeys.includes(key) && key !== 'pairedSteamIds');
     const hasAllRequiredKeys = missingKeys.length === 0;
     const hasOnlyValidKeys = unknownKeys.length === 0;
 

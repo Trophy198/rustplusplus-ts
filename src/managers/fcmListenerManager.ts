@@ -35,7 +35,8 @@ import * as types from '../utils/types';
 import * as vu from '../utils/validationUtils';
 import * as constants from '../utils/constants'
 import {
-    GuildInstance, SmartSwitchConfigAutoSetting, StorageMonitorConfigType
+    GuildInstance, ServerInfo, SmartSwitchConfig, SmartAlarmConfig, StorageMonitorConfig, SmartSwitchConfigAutoSetting,
+    StorageMonitorConfigType
 } from './guildInstanceManager';
 import * as discordMessages from '../discordUtils/discordMessages';
 
@@ -350,28 +351,12 @@ export class FcmListenerManager {
 
                     case PairingTypes.ENTITY: {
                         switch (body.entityType) {
-                            case PairingEntityTypes.SMART_SWITCH: {
-                                log.info(`${fn} ${ChannelIds.PAIRING}: ${PairingTypes.ENTITY}: ` +
-                                    `${PairingEntityNames.SMART_SWITCH}`, logParam);
-                                if (!vu.isValidObject(body, PairingEntityBodySchema)) return;
-
-                                await pairingServer(this, steamId, body);
-                            } break;
-
-                            case PairingEntityTypes.SMART_ALARM: {
-                                log.info(`${fn} ${ChannelIds.PAIRING}: ${PairingTypes.ENTITY}: ` +
-                                    `${PairingEntityNames.SMART_ALARM}`, logParam);
-                                if (!vu.isValidObject(body, PairingEntityBodySchema)) return;
-
-                                await pairingServer(this, steamId, body);
-                            } break;
-
+                            case PairingEntityTypes.SMART_SWITCH:
+                            case PairingEntityTypes.SMART_ALARM:
                             case PairingEntityTypes.STORAGE_MONITOR: {
-                                log.info(`${fn} ${ChannelIds.PAIRING}: ${PairingTypes.ENTITY}: ` +
-                                    `${PairingEntityNames.STORAGE_MONITOR}`, logParam);
                                 if (!vu.isValidObject(body, PairingEntityBodySchema)) return;
-
-                                pairingEntityStorageMonitor(this, steamId, body);
+                                log.info(`${fn} Pairing device: ${body.entityName}`, logParam);
+                                await pairingServer(this, steamId, body);
                             } break;
 
                             default: {
@@ -502,18 +487,7 @@ async function pairingServer(flm: FcmListenerManager, steamId: types.SteamId,
 
         const server = gInstance.serverInfoMap[serverId];
         if (entity) {
-            const entityId = entity.entityId;
-            const language = gInstance.generalSettings.language;
-            const device = entity.entityType === PairingEntityTypes.SMART_ALARM ?
-                (server.smartAlarmConfigMap[entityId] ??= {
-                    entityId, messageId: null, pairedDate: 0, name: lm.getIntl(language, 'smartAlarm'),
-                    command: entityId, img: 'smart_alarm.png', everyone: false, inGame: false, lastTrigger: null,
-                    message: lm.getIntl(language, 'yourBaseIsUnderAttack')
-                }) : (server.smartSwitchConfigMap[entityId] ??= {
-                    entityId, messageId: null, pairedDate: 0, name: lm.getIntl(language, 'smartSwitch'),
-                    command: entityId, img: 'smart_switch.png', autoSetting: SmartSwitchConfigAutoSetting.Off,
-                    proximitySetting: constants.PROXIMITY_SETTING_DEFAULT_METERS
-                });
+            const device = pairedDevice(server, entity, gInstance.generalSettings.language);
             device.pairedDate = Math.floor(Date.now() / 1000);
             device.pairedSteamIds ??= [];
             if (!device.pairedSteamIds.includes(steamId)) device.pairedSteamIds.push(steamId);
@@ -530,7 +504,9 @@ async function pairingServer(flm: FcmListenerManager, steamId: types.SteamId,
         }
         if (entity && server.active && instance) {
             if (entity.entityType === PairingEntityTypes.SMART_ALARM) await instance.refreshSmartAlarm(entity.entityId);
-            else await instance.requestSmartSwitch(entity.entityId);
+            else if (entity.entityType === PairingEntityTypes.STORAGE_MONITOR) {
+                await instance.storageMonitors.refresh(entity.entityId);
+            } else await instance.requestSmartSwitch(entity.entityId);
         }
     }
 }
@@ -574,51 +550,29 @@ function storePairedServer(gInstance: GuildInstance, serverId: types.ServerId, b
     };
 }
 
-async function pairingEntityStorageMonitor(flm: FcmListenerManager, steamId: types.SteamId, body: PairingEntityBody) {
-    const fn = `[${flm.constructor.name}: pairingEntityStorageMonitor]`;
-    const logParam = { steamId: steamId };
-
-    const credentials = cm.getCredentials(steamId);
-
-    if (!credentials) {
-        log.warn(`${fn} Could not find Credentials.`, logParam);
-        return;
-    }
-
-    const associatedGuilds = await dm.getGuildIdsForUser(credentials.discordUserId);
-    for (const guildId of associatedGuilds) {
-        const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-        const language = gInstance.generalSettings.language;
-
-        const serverId = pairingServerKey(gInstance.serverInfoMap, body);
-        const serverInfo = gInstance.serverInfoMap[serverId];
-        if (!serverInfo) {
-            log.warn(`${fn} Could not find server.`, { guildId: guildId, serverId: serverId, steamId: steamId });
-            continue;
-        }
-
-        const storageMonitorConfigMap = serverInfo.storageMonitorConfigMap;
-        const exist = body.entityId in storageMonitorConfigMap;
-        storageMonitorConfigMap[body.entityId] = {
-            entityId: body.entityId,
-            messageId: exist ? storageMonitorConfigMap[body.entityId].messageId : null,
-            pairedDate: Math.floor(Date.now() / 1000),
-            name: exist ? storageMonitorConfigMap[body.entityId].name : lm.getIntl(language, 'storageMonitor'),
-            img: exist ? storageMonitorConfigMap[body.entityId].img : 'storage_monitor.png',
-            everyone: exist ? storageMonitorConfigMap[body.entityId].everyone : false,
-            inGame: exist ? storageMonitorConfigMap[body.entityId].inGame : true,
-            type: exist ? storageMonitorConfigMap[body.entityId].type : StorageMonitorConfigType.Unknown
-        };
-
-        updatePairingDetails(gInstance, serverId, steamId, body);
-        gim.updateGuildInstance(guildId);
-
-        // TODO! Add the storagemonitor to rustplusManager
-
-        const rpInstance = rpm.getInstance(guildId, serverId);
-        if (rpInstance && serverInfo.active) {
-            await discordMessages.sendStorageMonitorMessage(flm.dm, guildId, serverId, body.entityId);
-        }
+function pairedDevice(server: ServerInfo, entity: PairingEntityBody,
+    language: GuildInstance['generalSettings']['language']):
+    SmartSwitchConfig | SmartAlarmConfig | StorageMonitorConfig {
+    const entityId = entity.entityId;
+    const base = { entityId, messageId: null, pairedDate: 0 };
+    switch (entity.entityType) {
+        case PairingEntityTypes.STORAGE_MONITOR:
+            return server.storageMonitorConfigMap[entityId] ??= {
+                ...base, name: lm.getIntl(language, 'storageMonitor'), img: 'storage_monitor.png',
+                everyone: false, inGame: true, type: StorageMonitorConfigType.Unknown
+            };
+        case PairingEntityTypes.SMART_ALARM:
+            return server.smartAlarmConfigMap[entityId] ??= {
+                ...base, name: lm.getIntl(language, 'smartAlarm'), command: entityId, img: 'smart_alarm.png',
+                everyone: false, inGame: false, lastTrigger: null,
+                message: lm.getIntl(language, 'yourBaseIsUnderAttack')
+            };
+        default:
+            return server.smartSwitchConfigMap[entityId] ??= {
+                ...base, name: lm.getIntl(language, 'smartSwitch'), command: entityId, img: 'smart_switch.png',
+                autoSetting: SmartSwitchConfigAutoSetting.Off,
+                proximitySetting: constants.PROXIMITY_SETTING_DEFAULT_METERS
+            };
     }
 }
 

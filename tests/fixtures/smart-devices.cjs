@@ -41,6 +41,7 @@ async function until(check) {
 }
 
 async function setup(t, relay = false, type = rp.AppEntityType.Switch) {
+    const isStorage = type === rp.AppEntityType.StorageMonitor;
     const isAlarm = type === rp.AppEntityType.Alarm;
     const ws = new Ws.Server({ host: '127.0.0.1', port: 0 });
     await once(ws, 'listening');
@@ -52,13 +53,16 @@ async function setup(t, relay = false, type = rp.AppEntityType.Switch) {
     const serverId = relay ? 'relay-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' : '127.0.0.1-' + port;
     relayEndpoint = 'ws://127.0.0.1:' + port;
     const guild = { generalSettings: { language: 'en', inGameChatCommandPrefix: '!' },
-        guildChannelIds: { servers: null, smartSwitches: channel, smartAlarms: channel, activity },
+        guildChannelIds: { servers: null, smartSwitches: channel, smartAlarms: channel,
+            storageMonitors: channel, activity },
         serverInfoMap: {}, pairingDataMap: {},
         serverToView: null };
     guilds.set(guildId, guild);
     const cards = new Map();
     const requests = [];
-    const states = new Map([[light, false], [pump, true]]);
+    const expiry = Math.floor(Date.now() / 1000) + 86400;
+    const states = new Map(isStorage ? [[light, { capacity: 29, protectionExpiry: expiry }],
+        [pump, { capacity: 48, items: [{ itemId: -151838493, quantity: 10 }] }]] : [[light, false], [pump, true]]);
     const owners = new Map([[light, accounts[0]], [pump, accounts[1]]]);
     const sim = { socket: null, hold: false, failWrite: false, pending: null };
     const send = (socket, message) => socket.send(rp.AppMessage.toBinary(rp.AppMessage.create(message)));
@@ -75,7 +79,8 @@ async function setup(t, relay = false, type = rp.AppEntityType.Switch) {
                 assert.ok([deviceOwners].flat().includes(playerId));
                 assert.equal(request.playerToken, 100 + accounts.indexOf(playerId));
                 if (request.getEntityInfo) {
-                    body = { entityInfo: { type, payload: { value: states.get(entityId) } } };
+                    const payload = isStorage ? states.get(entityId) : { value: states.get(entityId) };
+                    body = sim.readError ? { error: { error: 'not_found' } } : { entityInfo: { type, payload } };
                 }
                 else if (sim.failWrite) body = { error: { error: 'accessDenied' } };
                 else {
@@ -105,15 +110,16 @@ async function setup(t, relay = false, type = rp.AppEntityType.Switch) {
         await sleep(1); // Include a genuine edit/create race window.
         const id = existingId ?? 'card-' + (cards.size + 1);
         const embed = content.embeds[0].toJSON();
-        const button = content.components[0].toJSON().components[0];
-        cards.set(id, { button, state: embed.fields.at(-1).value });
+        const button = content.components[0]?.toJSON().components[0];
+        cards.set(id, { button, state: embed.fields?.at(-1)?.value, embed });
         return { id };
     };
     async function pair(entityId, account) {
-        if (isAlarm) owners.set(entityId, [...new Set([owners.get(entityId), accounts[account]].flat())]);
+        if (isAlarm || isStorage) owners.set(entityId, [...new Set([owners.get(entityId), accounts[account]].flat())]);
         const body = {
             ...(relay ? { id: serverId.slice(6) } : { ip: '127.0.0.1', port }),
-            type: 'entity', entityType: String(type), entityName: isAlarm ? 'Smart Alarm' : 'Smart Switch', entityId,
+            type: 'entity', entityType: String(type), entityId,
+            entityName: isStorage ? 'Storage Monitor' : isAlarm ? 'Smart Alarm' : 'Smart Switch',
             playerId: accounts[account], playerToken: String(100 + account),
             name: 'Local server', desc: '', img: '', logo: '', url: ''
         };
@@ -126,13 +132,15 @@ async function setup(t, relay = false, type = rp.AppEntityType.Switch) {
     await pair(pump, 1);
     const server = guild.serverInfoMap[serverId];
     server.active = true;
-    const devices = isAlarm ? server.smartAlarmConfigMap : server.smartSwitchConfigMap;
+    const devices = isStorage ? server.storageMonitorConfigMap :
+        isAlarm ? server.smartAlarmConfigMap : server.smartSwitchConfigMap;
     app.rustPlusManager.addInstance(guildId, serverId);
     const instance = app.rustPlusManager.getInstance(guildId, serverId);
     t.after(async () => {
         await instance.shutdown();
         // Finish card edits dispatched by the final socket frame before retiring the simulated guild.
-        const refresh = isAlarm ? views.sendSmartAlarmMessage : views.sendSmartSwitchMessage;
+        const refresh = isStorage ? views.sendStorageMonitorMessage :
+            isAlarm ? views.sendSmartAlarmMessage : views.sendSmartSwitchMessage;
         await Promise.all(Object.keys(devices).map(id => refresh(dm, guildId, serverId, id)));
         for (const socket of ws.clients) socket.terminate();
         await new Promise(resolve => ws.close(resolve));
@@ -149,9 +157,12 @@ async function setup(t, relay = false, type = rp.AppEntityType.Switch) {
         if (!result) assert.equal(replies[0].flags, discordjs.MessageFlags.Ephemeral);
         return result;
     }
+    function broadcast(entityId, payload) {
+        send(sim.socket, { broadcast: { entityChanged: { entityId, payload } } });
+    }
     function change(entityId, value) {
         states.set(entityId, value);
-        send(sim.socket, { broadcast: { entityChanged: { entityId, payload: { value } } } });
+        broadcast(entityId, isStorage ? value : { value });
     }
     function push(account, entityId, deliveryId, sent = Date.now(), message = 'Intruder', id = deliveryId) {
         const address = relay ? { id: serverId.slice(6) } : { ip: '127.0.0.1', port };
@@ -163,7 +174,8 @@ async function setup(t, relay = false, type = rp.AppEntityType.Switch) {
     }
     await instance.startup();
     await until(() => cards.size === 2);
-    return { card, click, change, pair, instance, requests, devices, states, owners, cards, sim, server, alerts, push };
+    return { card, click, change, broadcast, pair, instance, requests, devices, states, owners, cards, sim,
+        server, alerts, push };
 }
 
 module.exports = { setup, until, dm, accounts, guilds, light, pump, ConnectionStatus };

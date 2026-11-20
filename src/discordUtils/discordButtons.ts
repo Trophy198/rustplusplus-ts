@@ -26,8 +26,7 @@ import * as types from '../utils/types';
 import * as constants from '../utils/constants';
 import * as utils from '../utils/utils';
 import {
-    EventNotificationSettings, GuildInstance, ServerInfo, SmartAlarmConfig, StorageMonitorConfig,
-    StorageMonitorConfigType
+    EventNotificationSettings, GuildInstance, ServerInfo, SmartAlarmConfig
 } from '../managers/guildInstanceManager';
 import { NewsNewsBody } from '../managers/fcmListenerManager';
 import { isValidUrl } from '../utils/validationUtils';
@@ -255,61 +254,6 @@ export function getSmartAlarmButtons(guildId: types.GuildId, serverId: types.Ser
             type: discordjs.ComponentType.Button
         }));
 }
-
-export function getStorageMonitorButtons(guildId: types.GuildId, serverId: types.ServerId, entityId: types.EntityId):
-    discordjs.ActionRowBuilder<discordjs.ButtonBuilder> {
-    const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-    const serverInfo = gInstance.serverInfoMap[serverId] as ServerInfo;
-    const storageMonitorConfig = serverInfo.storageMonitorConfigMap[entityId] as StorageMonitorConfig;
-    const language = gInstance.generalSettings.language;
-    const identifier = JSON.stringify([serverId, entityId]);
-
-    const everyoneButton = getButton({
-        customId: `StorageMonitorEveryone${identifier}`,
-        label: '@everyone',
-        style: storageMonitorConfig.everyone ? discordjs.ButtonStyle.Success : discordjs.ButtonStyle.Danger,
-        type: discordjs.ComponentType.Button,
-        disabled: storageMonitorConfig.type === StorageMonitorConfigType.Unknown ? true : false
-    });
-
-    const inGameButton = getButton({
-        customId: `StorageMonitorInGame${identifier}`,
-        label: lm.getIntl(language, 'buttonInGame'),
-        style: storageMonitorConfig.inGame ? discordjs.ButtonStyle.Success : discordjs.ButtonStyle.Danger,
-        type: discordjs.ComponentType.Button,
-        disabled: storageMonitorConfig.type === StorageMonitorConfigType.Unknown ? true : false
-    });
-
-    const recycleButton = getButton({
-        customId: `StorageMonitorRecycle${identifier}`,
-        label: lm.getIntl(language, 'buttonRecycle'),
-        style: discordjs.ButtonStyle.Primary,
-        type: discordjs.ComponentType.Button,
-        disabled: storageMonitorConfig.type === StorageMonitorConfigType.Unknown ? true : false
-    });
-
-    const editButton = getButton({
-        customId: `StorageMonitorEdit${identifier}`,
-        label: lm.getIntl(language, 'buttonEdit'),
-        style: discordjs.ButtonStyle.Primary,
-        type: discordjs.ComponentType.Button,
-        disabled: storageMonitorConfig.type === StorageMonitorConfigType.Unknown ? true : false
-    });
-
-    const deleteButton = getButton({
-        customId: `StorageMonitorDelete${identifier}`,
-        style: discordjs.ButtonStyle.Secondary,
-        emoji: '🗑️',
-        type: discordjs.ComponentType.Button
-    });
-
-    const components = storageMonitorConfig.type === StorageMonitorConfigType.ToolCupboard ?
-        [everyoneButton, inGameButton, editButton, deleteButton] :
-        [recycleButton, editButton, deleteButton];
-
-    return new discordjs.ActionRowBuilder<discordjs.ButtonBuilder>().addComponents(...components);
-}
-
 
 /**
  * Notifications based buttons

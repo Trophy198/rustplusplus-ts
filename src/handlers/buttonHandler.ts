@@ -532,16 +532,6 @@ async function serverConnectButtonHandler(dm: DiscordManager, interaction: disco
         await discordMessages.sendServerMessage(dm, guildId, previousServerToView, connectionStatus);
     }
 
-    const creationPromises: Promise<void>[] = [];
-    for (const content of Object.values(server.storageMonitorConfigMap)) {
-        creationPromises.push(discordMessages.sendStorageMonitorMessage(dm, guildId, serverId, content.entityId));
-    }
-
-    // TODO! Create smartswitchgroup messages
-    //for (const content of Object.values(server.smartSwitchGroupConfigMap)) {
-    //}
-    await Promise.allSettled(creationPromises);
-
     server.active = true;
     gim.updateGuildInstance(guildId);
 

@@ -64,7 +64,7 @@ async function appMessageBroadcast(rpInstance: RustPlusInstance, appBroadcast: r
     }
     else if (appBroadcast.entityChanged?.payload && appBroadcast.entityChanged.entityId !== undefined) {
         const { entityId, payload } = appBroadcast.entityChanged;
-        await rpInstance.entityChanged(entityId, payload.value);
+        await rpInstance.entityChanged(entityId, payload);
     }
     else if (Object.hasOwn(appBroadcast, 'clanChanged')) {
         appMessageBroadcastClanChanged(rpInstance, appBroadcast.clanChanged as rp.AppClanChanged);

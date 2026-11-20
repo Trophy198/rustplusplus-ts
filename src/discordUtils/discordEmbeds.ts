@@ -19,13 +19,15 @@
 */
 
 import * as discordjs from 'discord.js';
+import type { AppEntityPayload } from 'rustplus-ts';
+import itemCatalog from '../staticFiles/items.json';
 
 import {
     localeManager as lm, guildInstanceManager as gim, config, credentialsManager as cm,
     rustPlusManager as rpm
 } from '../../index';
 import {
-    GuildInstance, ServerInfo, SmartSwitchConfig, SmartAlarmConfig, StorageMonitorConfig, StorageMonitorConfigType
+    GuildInstance, ServerInfo, SmartSwitchConfig, SmartAlarmConfig, StorageMonitorConfigType
 } from '../managers/guildInstanceManager';
 import { CctvCodes } from '../utils/cctvCodes';
 import * as constants from '../utils/constants';
@@ -147,7 +149,7 @@ export function getEmbedColumnFields(options: discordjs.EmbedData, columns: Colu
         const rowLength = columns.reduce((sum, column) => sum + column.data[row].length + '\n'.length, 0);
         if ((totalChars + rowLength) > EmbedLimits.Maximum) break;
 
-        if (columns.some((column, index) => column.data[row].length + fieldsData[fieldIndex + index].length >
+        if (columns.some((column, index) => column.data[row].length + 1 + fieldsData[fieldIndex + index].length >
             EmbedLimits.FieldValue)) {
             totalChars += '\u200B'.length * columns.length; /* For empty field name */
             fieldIndex += columns.length + (columns.length === 2 ? 1 : 0);
@@ -627,71 +629,58 @@ export function getSmartAlarmEmbed(guildId: types.GuildId, serverId: types.Serve
     });
 }
 
-export function getStorageMonitorEmbed(guildId: types.GuildId, serverId: types.ServerId, entityId: types.EntityId):
-    discordjs.EmbedBuilder {
-    const gInstance = gim.getGuildInstance(guildId) as GuildInstance;
-    const serverInfo = gInstance.serverInfoMap[serverId] as ServerInfo;
-    const storageMonitorConfig = serverInfo.storageMonitorConfigMap[entityId] as StorageMonitorConfig;
-    const language = gInstance.generalSettings.language;
+const storageItemNames: Record<string, { name: string }> = itemCatalog;
 
-    const storageMonitorConfigTypeMap = {
-        [StorageMonitorConfigType.Unknown]: lm.getIntl(language, 'unknown'),
-        [StorageMonitorConfigType.ToolCupboard]: lm.getIntl(language, 'toolCupboard'),
-        [StorageMonitorConfigType.VendingMachine]: lm.getIntl(language, 'vendingMachine'),
-        [StorageMonitorConfigType.LargeWoodBox]: lm.getIntl(language, 'largeWoodBox')
-    }
-
-    const title = storageMonitorConfig.name;
-    let description =
-        `**${lm.getIntl(language, 'id')}** \`${entityId}\`\n` +
-        `**${lm.getIntl(language, 'type')}** \`${storageMonitorConfigTypeMap[storageMonitorConfig.type]}\`\n`;
+export function getStorageMonitorEmbed(guildId: types.GuildId, serverId: types.ServerId, entityId: types.EntityId,
+    payload?: AppEntityPayload): discordjs.EmbedBuilder {
+    const guild = gim.getGuildInstance(guildId) as GuildInstance;
+    const server = guild.serverInfoMap[serverId];
+    const device = server.storageMonitorConfigMap[entityId];
+    const language = guild.generalSettings.language;
+    const label = (key: string) => lm.getIntl(language, key);
+    const typeNames = {
+        [StorageMonitorConfigType.Unknown]: 'unknown',
+        [StorageMonitorConfigType.ToolCupboard]: 'toolCupboard',
+        [StorageMonitorConfigType.VendingMachine]: 'vendingMachine',
+        [StorageMonitorConfigType.LargeWoodBox]: 'largeWoodBox'
+    };
+    const lines = [`**${label('id')}** \`${entityId}\``, `**${label('type')}** \`${label(typeNames[device.type])}\``];
     let color = constants.COLOR_DEFAULT;
-
-    const itemNames: string[] = [];
-    const itemQuantities: string[] = [];
-
-    /* eslint-disable-next-line no-constant-condition */
-    if (false) { // TODO! IF storagemonitor in rustplusManager
-
-        // TODO! Get items, capacity, expire from rustplusManager for the storagemonitor
-
-        // TODO! If capacity === 0, add in the beginning of description, "NO POWER :zap:"
-
-        if (storageMonitorConfig.type !== StorageMonitorConfigType.Unknown) {
-            // TODO! If rustplusManager have the storagemonitor, get the capacity for slots
-            description += `**${lm.getIntl(language, 'slots')}** `;
-            const numberOfItems = 10;
-            const capacity = 28;
-            description += `\`(${numberOfItems}/${capacity})\`\n`
+    const contents = new Map<string, { name: string; quantity: number }>();
+    if (!payload) {
+        lines.push(label('storageMonitorUnavailable'));
+    } else if (payload.capacity === 0) {
+        lines.push(label('storageMonitorNoSignal'));
+    } else {
+        lines.push(`**${label('slots')}** \`${payload.items.length}/${payload.capacity}\``);
+        if (device.type === StorageMonitorConfigType.ToolCupboard) {
+            const protectedUntil = payload.protectionExpiry;
+            const decaying = protectedUntil <= Math.floor(Date.now() / 1000);
+            if (decaying) color = constants.COLOR_INACTIVE;
+            const upkeep = decaying ? label('decayingCap') : discordjs.time(protectedUntil, 'R');
+            lines.push(`**${label('upkeep')}** ${upkeep}`);
         }
-
-        if (storageMonitorConfig.type === StorageMonitorConfigType.ToolCupboard) {
-            /* eslint-disable-next-line prefer-const */
-            let expiry = 1742647361; // temp
-            description += `**${lm.getIntl(language, 'upkeep')}** `;
-
-            if (expiry === 0) {
-                color = constants.COLOR_INACTIVE;
-                description += `\`${lm.getIntl(language, 'decayingCap')}\`:warning:`;
-            }
+        for (const item of payload.items) {
+            const key = `${item.itemId}:${item.itemIsBlueprint}`;
+            const stack = contents.get(key);
+            if (stack) stack.quantity += item.quantity;
             else {
-                description += discordjs.time(expiry, 'R');
+                const name = storageItemNames[item.itemId]?.name ?? String(item.itemId);
+                contents.set(key, { name: item.itemIsBlueprint ? `${name} (${label('storageBlueprint')})` : name,
+                    quantity: item.quantity });
             }
         }
-
-        // TODO! Loop through items and add to itemNames and itemQuantities
+        if (!contents.size) lines.push(label('empty'));
     }
-
-    return getEmbedColumnFields({
-        title: title,
-        description: description,
-        color: colorHexToNumber(color),
-        thumbnail: { url: `attachment://${storageMonitorConfig.img}` },
-        footer: { text: serverInfo.name },
-        timestamp: new Date()
-    }, [
-        { name: lm.getIntl(language, 'item'), data: itemNames },
-        { name: lm.getIntl(language, 'quantity'), data: itemQuantities }
+    const options = {
+        title: device.name, description: lines.join('\n'), color: colorHexToNumber(color),
+        thumbnail: { url: `attachment://${device.img}` }, footer: { text: server.name }, timestamp: new Date()
+    };
+    if (!contents.size) return getEmbed(options);
+    const rows = Array.from(contents.values());
+    return getEmbedColumnFields(options, [
+        { name: label('item'), data: rows.map(item => item.name) },
+        { name: label('quantity'), data: rows.map(item => String(item.quantity)) }
     ]);
 }
 
