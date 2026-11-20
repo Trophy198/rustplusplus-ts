@@ -16,7 +16,7 @@
 - [ ] leader — **main 구현** `/leader member`로 팀원에게 위임. 현재 리더의 서버 페어링 사용
 - [x] map
 - [ ] market — **Rust+ 제한** 자판기 상품·가격 조회
-- [ ] players
+- [ ] players — **main 구현** `/players name`은 Rust+ 팀원의 접속 상태와 서버 전체 인원수를 표시합니다. `/players link`로 서버 ID를 연결하고 `.env`에 `RPP_BATTLEMETRICS_TOKEN`을 설정하면 공개 온라인 명단을 이름 또는 `/players playerid`로 검색할 수 있습니다. BattleMetrics API 이용 권한이 필요하며 서버 전체의 오프라인·이름 변경 이력은 제공하지 않습니다.
 - [ ] recycle       Requires rustlabs data
 - [ ] research      Requires rustlabs data
 - [x] reset
@@ -49,7 +49,7 @@
 - [x] note
 - [x] offline
 - [x] online
-- [ ] player
+- [ ] player — **main 구현** `!player 이름` 또는 `!players`로 온라인 이름을 검색합니다. BattleMetrics를 사용할 수 없으면 Rust+ 팀원 명단에서 검색합니다.
 - [x] pop
 - [x] prox
 - [ ] recycle       Requires rustlabs data

@@ -13,7 +13,7 @@
 - **/leader** - Transfer leadership.
 - **/map** - Display the In-Game Map.
 - **/market** - Search for or subscribe to items in vending machines.
-- **/players** - Get Battlemetrics data on all connected players.
+- **/players** - Search public online players via BattleMetrics or check Rust+ team status.
 - **/recycle** - Display the output of recycling an item.
 - **/research** - Display the cost to research an item.
 - **/reset** - Reset Discord Channels.
@@ -43,7 +43,7 @@
 - **note/notes** - Add notes.
 - **offline** - Display offline teammates.
 - **online** - Display online teammates.
-- **player/players** - Get Battlemetrics information about players.
+- **player/players** - Find online players in the public BattleMetrics roster or your Rust+ team.
 - **pop** - Get population of the server.
 - **prox** - Display teammates that are nearby.
 - **recycle** - Display the output of recycling an item.

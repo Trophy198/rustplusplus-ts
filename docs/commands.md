@@ -21,7 +21,7 @@ Slash Command | Description
 [**/leader**](commands.md#leader) | Give or take the leadership from/to a team member.
 [**/map**](commands.md#map) | Get the currently connected server map image.
 [**/market**](commands.md#market) | Operations for In-Game Vending Machines.
-[**/players**](commands.md#players) | Get player/players information based on battlemetrics.
+[**/players**](commands.md#players) | Search online players and check Rust+ team status.
 [**/recycle**](commands.md#recycle) | Display the output of recycling an item.
 [**/research**](commands.md#research) | Display the cost to research an item.
 [**/reset**](commands.md#reset) | Reset Discord channels.
@@ -207,22 +207,15 @@ Subcommand | Options | Description | Required
 
 ## **/players**
 
-> **Get player/players information based on Battlemetrics.** Calling the subcommand name without the name option will display all players depending on status option. By calling the subcommand playerid, you will get more specific information about a single player.
+The selected Rust server supplies its population and the online/offline status of your team. Choose a server in the servers channel when several are paired.
 
-Subcommand | Options | Description | Required
----------- | ------- | ----------- | --------
-`name` | &nbsp; | Search for a player on Battlemetrics based on player name. | &nbsp;
-&nbsp; | `status` | Search for players that are online/offline/any. | `True`
-&nbsp; | `name` | The name of the player. | `False`
-&nbsp; | `battlemetricsid` | The Battlemetrics ID of the server (default: The connected server). | `False`
-`playerid` | &nbsp; | Search for a player on Battlemetrics based on player id. | &nbsp;
-&nbsp; | `playerid` | The player id of the player. | `True`
-&nbsp; | `battlemetricsid` | The Battlemetrics ID of the server (default: The connected server). | `False`
+| Command | Result |
+| --- | --- |
+| `/players name` | Show online players. Use `name` for a partial name match or `status` to include offline teammates. |
+| `/players playerid` | Find an exact BattleMetrics player ID in the public online roster. |
+| `/players link` / `/players unlink` | As a bot administrator, set or remove the selected Rust server’s BattleMetrics server ID. |
 
-![Discord Slash Command players Image](images/slash_commands/players.png)
-![Discord Slash Command players all players Image](images/slash_commands/players_all_players.png)
-![Discord Slash Command players specific user Image](images/slash_commands/players_specific_user.png)
-
+To search beyond your team, set `RPP_BATTLEMETRICS_TOKEN` in the bot environment, restart the bot, then use `/players link`. The token needs BattleMetrics API access. Both search subcommands also accept a one-time `battlemetricsid` server override. Results are scoped to the source shown. Server population can exceed the number of public names. Offline status is available for Rust+ teammates.
 
 ## **/recycle**
 
@@ -363,7 +356,7 @@ In-Game Command | Description
 [**note/notes**](commands.md#notenotes) | Create notes about meaningful things.
 [**offline**](commands.md#offline) | Get the currently offline players in your team.
 [**online**](commands.md#online) | Get the currently online players in your team.
-[**player/players**](commands.md#playerplayers) | Get the names and playtime of the currently online players on the server (Based on Battlemetrics).
+[**player/players**](commands.md#playerplayers) | Search online players by name.
 [**pop**](commands.md#pop) | Get the current population of the server including queue size and max population.
 [**prox**](commands.md#prox) | Get the distance to the three closest teammates.
 [**recycle**](commands.md#recycle-ingame) | Display the output of recycling an item.
@@ -566,11 +559,7 @@ Subcommand | Description | Required
 
 ## **player/players**
 
-> **Get the names and playtime of the currently online players on the server (Based on Battlemetrics).** To get all the currently online players on the server run `!players`. To get the information from a certain player run `!player <name or part of name>`.
-
-![In-Game Command players Image](images/ingame_commands/players_ingame.png)
-![In-Game Command player Image](images/ingame_commands/player_ingame.png)
-
+Use `!player <part of a name>` to find an online player or `!players` to list names. Both use the linked BattleMetrics public roster when available and otherwise show online Rust+ teammates. A `+N` suffix counts matches omitted to fit team chat.
 
 ## **pop**
 
