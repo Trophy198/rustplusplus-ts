@@ -11,6 +11,8 @@ execFileSync(process.execPath, [require.resolve('typescript/bin/tsc'), '-p', pat
     stdio: 'inherit'
 });
 
+fs.copyFileSync(path.join(__dirname, '.env.template'), path.join(output, '../scripts/.env.template'));
+
 for (const directory of ['languages', 'resources', 'staticFiles']) {
     fs.cpSync(path.join(source, directory), path.join(output, directory), { recursive: true });
 }

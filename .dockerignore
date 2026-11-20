@@ -1,6 +1,7 @@
 docs/
 .git
 .env*
+!scripts/.env.template
 **/node_modules
 **/dist
 credentials/

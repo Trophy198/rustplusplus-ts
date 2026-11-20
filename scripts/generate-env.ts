@@ -1,13 +1,21 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
+import { projectRoot } from '../src/utils/runtimePaths';
 
-const templatePath = path.resolve(__dirname, '.env.template');
-const envPath = path.resolve(__dirname, '../.env');
+export const projectEnvPath = path.join(projectRoot, '.env');
 
-if (fs.existsSync(envPath)) {
-    console.log('.env already exists. Skipping generation.');
-    process.exit(0);
+export function ensureEnvFile(envPath = projectEnvPath): boolean {
+    if (fs.existsSync(envPath)) return false;
+    const template = fs.readFileSync(path.join(__dirname, '.env.template'));
+    try {
+        fs.writeFileSync(envPath, template, { flag: 'wx', mode: 0o600 });
+        return true;
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+        throw error;
+    }
 }
 
-fs.copyFileSync(templatePath, envPath);
-console.log('.env file created from template.');
+if (require.main === module) {
+    console.log(ensureEnvFile() ? `Created ${projectEnvPath}` : `File already exists: ${projectEnvPath}`);
+}

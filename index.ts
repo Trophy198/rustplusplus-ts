@@ -21,6 +21,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import dotenv from 'dotenv';
+import { ensureEnvFile, projectEnvPath } from './scripts/generate-env';
 import { projectRoot } from './src/utils/runtimePaths';
 
 import { createLogger } from './src/managers/loggerManager';
@@ -31,7 +32,19 @@ import { DiscordManager } from './src/managers/discordManager';
 import { RustPlusManager } from './src/managers/rustPlusManager';
 import { FcmListenerManager } from './src/managers/fcmListenerManager';
 
-dotenv.config();
+// Keep accepting a service's working-directory .env. Fresh installs use the project root.
+const workingEnv = path.resolve('.env');
+const envPath = fs.existsSync(workingEnv) ? workingEnv : projectEnvPath;
+dotenv.config({ path: envPath, quiet: true });
+
+const clientId = process.env.RPP_DISCORD_CLIENT_ID?.trim();
+const token = process.env.RPP_DISCORD_TOKEN?.trim();
+if (!clientId || !token) {
+    if (ensureEnvFile(envPath)) console.log(`Created ${envPath}`);
+    const missing = [!clientId && 'RPP_DISCORD_CLIENT_ID', !token && 'RPP_DISCORD_TOKEN'].filter(Boolean);
+    console.error(`Discord setup required. Set ${missing.join(' and ')} in ${envPath} and restart the bot.`);
+    process.exit(1);
+}
 
 export const config = {
     general: {
@@ -43,10 +56,8 @@ export const config = {
     },
     discord: {
         username: process.env.RPP_DISCORD_USERNAME || 'rustplusplus',
-        clientId: process.env.RPP_DISCORD_CLIENT_ID ||
-            (() => { throw new Error('RPP_DISCORD_CLIENT_ID is required.'); })(),
-        token: process.env.RPP_DISCORD_TOKEN ||
-            (() => { throw new Error('RPP_DISCORD_TOKEN is required.'); })(),
+        clientId,
+        token,
         useCache: process.env.RPP_USE_CACHE === 'true',
         enforceNameChange: process.env.RPP_ENFORCE_NAME_CHANGE === 'true',
         enforceAvatarChange: process.env.RPP_ENFORCE_AVATAR_CHANGE === 'true',

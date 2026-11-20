@@ -11,7 +11,7 @@
 
 ![Setup Discord Bot create an application Image](images/bot_setup/create_an_application_bot_setup.png)
 
-4. Copy the `APPLICATION ID` to the config/index.js file located in repository folder `rustplusplus/config/index.js`.
+4. Save the `APPLICATION ID` for the `RPP_DISCORD_CLIENT_ID` entry in your project’s `.env` file (step 17).
 
 ![Setup Discord Bot copy application id Image](images/bot_setup/copy_application_id_bot_setup.png)
 
@@ -27,7 +27,7 @@
 
 ![Setup Discord Bot reset token Image](images/bot_setup/reset_token_bot_setup.png)
 
-8. Copy the `TOKEN` to the config/index.js file located in repository folder `rustplusplus/config/index.js`.
+8. Save the bot token for the `RPP_DISCORD_TOKEN` entry in your `.env` file.
 
 ![Setup Discord Bot bot token Image](images/bot_setup/bot_token_bot_setup.png)
 
@@ -63,7 +63,7 @@
 
 ![Setup Discord Bot bot in server Image](images/bot_setup/bot_in_server_bot_setup.png)
 
-17. Build the bot with `npm run build`, then start it by running `npm start` in the terminal (First time running the bot will create all of the missing discord text channels).
+17. Build the bot with `npm run build` and run `npm start`. On first start, open the generated `.env` in the project root, fill in the client ID and token from steps 4 and 8, then run `npm start` again. The bot logs in and sets up its Discord channels.
 
 <br>
 You have now successfully added a Discord Bot with the desired permissions to your Discord Server. You have also added the Application/Client ID and Bot Token to the configuration file as well as started the bot for the first time.

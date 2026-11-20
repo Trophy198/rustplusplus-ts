@@ -64,6 +64,8 @@ npm run build
 npm start
 ```
 
+On first start, the bot creates a project-root `.env` if Discord credentials are missing. Fill in `RPP_DISCORD_CLIENT_ID` and `RPP_DISCORD_TOKEN`, save the file and run the same start command again. Deployments that supply both values through the process environment can start directly.
+
 The build type-checks and compiles the bot and its local Rust+ library, then copies the runtime assets. Production starts directly from `dist/index.js`. For development, run `npm run dev` to start from TypeScript. Credentials, guild instances, logs and maps are stored in the project root in both modes.
 
 ## **How to update the repository**
